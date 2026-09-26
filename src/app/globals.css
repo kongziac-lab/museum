@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Noto Serif KR", "AppleMyungjo", "Batang", Georgia, serif;
+  --font-sans: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #030304;
+  color: #f4f1ea;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The museum canvas should never show scrollbars or text selection. */
+#museum-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+canvas {
+  display: block;
+  outline: none;
+  touch-action: none;
+}
+
+/* Subtle vignette overlay used across HUD layers. */
+.vignette {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
+}
+
+/* Museum crosshair dot. */
+.crosshair {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.4s ease;
+}
+.crosshair--active {
+  transform: scale(2.4);
+  background: rgba(255, 244, 224, 0.9);
+}
+
+/* Intro title wall — bokeh & sparks */
+.intro-bokeh {
+  position: absolute;
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+}
+
+.intro-bokeh--animate {
+  animation: intro-bokeh-float var(--b-dur, 18s) var(--b-delay, 0s) ease-in-out infinite;
+}
+
+.intro-spark {
+  position: absolute;
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+  background: #ffe8a8;
+  box-shadow: 0 0 6px 1px rgba(255, 200, 100, 0.85), 0 0 14px 2px rgba(255, 160, 60, 0.35);
+  will-change: opacity, transform;
+}
+
+.intro-spark--animate {
+  animation: intro-spark-twinkle var(--s-dur, 3s) var(--s-delay, 0s) ease-in-out infinite;
+}
+
+@keyframes intro-bokeh-float {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) translate(var(--b-dx, 0), var(--b-dy, 0)) scale(1.06);
+  }
+}
+
+@keyframes intro-spark-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  15% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: translate(-50%, -50%) scale(0.7);
+  }
+  85% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}

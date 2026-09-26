@@ -1,0 +1,72 @@
+// An Appreciation of a Masterpiece — optional persistence schema (Postgres via Prisma / Supabase).
+//
+// The museum runs WITHOUT a database: artworks are auto-detected from
+// /public/artworks and the layout persists to data/layout.json. This schema
+// is provided for teams who want to move collections + layouts into Postgres
+// (e.g. Supabase). See README → "Optional backend".
+//
+// Generate client:  npm run prisma:generate
+// Push to DB:       npm run prisma:push
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Collection {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String
+  createdAt DateTime  @default(now())
+  artworks  Artwork[]
+}
+
+model Artwork {
+  id           String      @id @default(cuid())
+  // Public URL / storage key of the image.
+  src          String
+  fileName     String
+  title        String
+  artist       String?
+  year         String?
+  medium       String?
+  description  String?
+  // Placement (world space). Stored as scalars for portability.
+  posX         Float       @default(0)
+  posY         Float       @default(1.62)
+  posZ         Float       @default(0)
+  rotX         Float       @default(0)
+  rotY         Float       @default(0)
+  rotZ         Float       @default(0)
+  scale        Float       @default(1.65)
+  roomId       String      @default("lobby")
+  wallId       String?
+  // Spotlight config.
+  spotEnabled  Boolean     @default(true)
+  spotColor    String      @default("#fff4e0")
+  spotIntensity Float      @default(40)
+  spotAngle    Float       @default(0.5)
+  spotPenumbra Float       @default(0.75)
+  spotHeight   Float       @default(2.35)
+  spotDistance Float       @default(3.0)
+
+  collection   Collection? @relation(fields: [collectionId], references: [id])
+  collectionId String?
+
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+// A published layout snapshot (versioned).
+model Layout {
+  id        String   @id @default(cuid())
+  version   Int      @default(1)
+  data      Json
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
