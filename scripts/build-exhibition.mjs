@@ -43,6 +43,49 @@ const DEFAULT_INFO = {
   수상부문순서: ["대상", "최우수상", "우수상", "장려상", "입선"],
 };
 
+/** 배경 사진 파일 이름 (확장자 제외). 수상작 목록에서는 빠진다. */
+const BG_BASENAME = "배경";
+
+/** 이미지 가로·세로 픽셀을 파일 머리에서 읽는다 (PNG / JPEG / WebP). 실패하면 null. */
+function imageSize(file) {
+  try {
+    const b = readFileSync(file);
+    // PNG
+    if (b.length > 24 && b.readUInt32BE(0) === 0x89504e47) {
+      return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+    }
+    // JPEG: SOFn 마커를 찾는다
+    if (b[0] === 0xff && b[1] === 0xd8) {
+      let i = 2;
+      while (i < b.length) {
+        if (b[i] !== 0xff) {
+          i++;
+          continue;
+        }
+        const m = b[i + 1];
+        const len = b.readUInt16BE(i + 2);
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+          return { width: b.readUInt16BE(i + 7), height: b.readUInt16BE(i + 5) };
+        }
+        i += 2 + len;
+      }
+    }
+    // WebP
+    if (b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") {
+      const kind = b.toString("ascii", 12, 16);
+      if (kind === "VP8 ") return { width: b.readUInt16LE(26) & 0x3fff, height: b.readUInt16LE(28) & 0x3fff };
+      if (kind === "VP8L") {
+        const v = b.readUInt32LE(21);
+        return { width: (v & 0x3fff) + 1, height: ((v >> 14) & 0x3fff) + 1 };
+      }
+      if (kind === "VP8X") return { width: 1 + b.readUIntLE(24, 3), height: 1 + b.readUIntLE(27, 3) };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 /** macOS 파일명은 자모가 분리된(NFD) 형태라서 NFC로 맞춘 뒤 비교한다. */
 const norm = (s) => String(s ?? "").normalize("NFC").trim();
 const key = (s) => norm(s).toLowerCase();
@@ -146,6 +189,7 @@ function listImages() {
     .filter((f) => !f.startsWith("."))
     .filter((f) => VALID_EXT.has(extname(f).toLowerCase()))
     .filter((f) => statSync(join(SRC_DIR, f)).isFile())
+    .filter((f) => norm(f).replace(/\.[^.]+$/, "") !== BG_BASENAME)
     .sort((a, b) => norm(a).localeCompare(norm(b), "ko"));
 }
 
@@ -205,8 +249,11 @@ function main() {
     if (statSync(from).size > BIG_FILE) {
       warn(`'${norm(e.file)}' 용량이 큽니다 (${(statSync(from).size / 1048576).toFixed(1)}MB). 2000px 이하로 줄이면 모바일에서 빨리 뜹니다.`);
     }
+    const size = imageSize(from);
     return {
       id: `awards/${out}`,
+      width: size?.width ?? 0,
+      height: size?.height ?? 0,
       src: `/artworks/${out}`,
       collection: "awards",
       fileName: norm(e.file),
@@ -223,9 +270,29 @@ function main() {
   // 가장 높은 부문의 첫 작품을 입구 정면(대표 작품)으로
   if (artworks.length > 0) artworks[0].hero = true;
 
+  // 배경 사진 (선택): 수상작/배경.jpg — 360° 파노라마(가로:세로 = 2:1)면 하늘 전체, 아니면 먼 배경막으로 쓴다.
+  let background = null;
+  const bgFile = readdirSync(SRC_DIR).find(
+    (f) => norm(f).replace(/\.[^.]+$/, "") === BG_BASENAME && VALID_EXT.has(extname(f).toLowerCase())
+  );
+  if (bgFile) {
+    const ext = extname(bgFile).toLowerCase();
+    copyFileSync(join(SRC_DIR, bgFile), join(OUT_IMG_DIR, `background${ext}`));
+    const size = imageSize(join(SRC_DIR, bgFile));
+    const aspect = size ? size.width / size.height : 0;
+    background = {
+      src: `/artworks/background${ext}`,
+      width: size?.width ?? 0,
+      height: size?.height ?? 0,
+      panorama: aspect > 1.8 && aspect < 2.2,
+    };
+    log(`✓ 배경 사진: ${norm(bgFile)} (${background.panorama ? "360° 파노라마" : "일반 사진 — 먼 배경막으로 사용"})`);
+  }
+
   const payload = {
     generatedAt: new Date().toISOString(),
     info,
+    background,
     count: artworks.length,
     artworks,
   };

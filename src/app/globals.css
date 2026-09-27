@@ -22,6 +22,7 @@ body {
 }
 
 body {
+  word-break: keep-all; /* 한글이 글자 중간에서 줄바꿈되지 않게 */
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;

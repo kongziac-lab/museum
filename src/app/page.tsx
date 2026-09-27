@@ -2,12 +2,11 @@
 
 import dynamic from "next/dynamic";
 
-// The museum owns a WebGL context, so it must render client-side only.
-const MuseumExperience = dynamic(
-  () => import("@/components/museum/MuseumExperience").then((m) => m.MuseumExperience),
-  { ssr: false }
-);
+// 3D 캔버스는 브라우저에서만 그린다.
+const OpenGallery = dynamic(() => import("@/components/gallery/OpenGallery").then((m) => m.OpenGallery), {
+  ssr: false,
+});
 
 export default function HomePage() {
-  return <MuseumExperience />;
+  return <OpenGallery />;
 }

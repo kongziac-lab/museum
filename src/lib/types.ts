@@ -35,6 +35,18 @@ export interface ArtworkSource {
   description?: string;
   /** 입구 정면에 거는 대표 작품 */
   hero?: boolean;
+  /** 원본 이미지 크기 (px, 빌드 스크립트가 읽음) */
+  width?: number;
+  height?: number;
+}
+
+/** 배경 사진 (수상작/배경.jpg) */
+export interface ExhibitionBackground {
+  src: string;
+  width: number;
+  height: number;
+  /** 가로:세로 = 2:1 360° 파노라마 여부 */
+  panorama: boolean;
 }
 
 /** 전시 정보 (수상작/전시정보.json) */

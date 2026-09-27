@@ -49,3 +49,4 @@ next-env.d.ts
 # 수상작 전시: 빌드 때 수상작/ 폴더에서 자동 생성되는 파일
 /public/artworks/award-*
 /public/exhibition.json
+/public/artworks/background.*
