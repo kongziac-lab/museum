@@ -136,6 +136,9 @@ meta["main"] = {"face": save(face, "main_face.png", 2048)}
 # 날개 벽: 창 한 칸(소나무·석상이 없는 x 441~539)을 지붕부터 1층 창까지 잘라 가로로 반복
 wing = mn.crop((441, 1302, 539, 1898))
 meta["main"]["wing"] = save(wing, "main_wing.jpg", 128)
+# 지붕·처마 없이 두 층만 (위아래로도 이어 붙일 수 있게) — 광장 옆 건물 벽
+floors = mn.crop((441, 1446, 539, 1898))
+meta["main"]["floors"] = save(floors, "main_floors.jpg", 128)
 
 json.dump(meta, open(os.path.join(OUT, "facades.json"), "w"), indent=1)
 print(json.dumps(meta))

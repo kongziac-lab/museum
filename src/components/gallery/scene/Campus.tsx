@@ -4,18 +4,17 @@ import { useMemo } from "react";
 import { createPortal } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
-import type { GalleryLayout } from "@/lib/gallery";
 import { FONT, SCENERY, useCanvasTexture } from "./common";
-import { campusPlan } from "./campusPlan";
+import type { SitePlan } from "./sitePlan";
 
 /**
- * 계명대학교 건물들 (scripts/scenery/build_scenery.py → campus.glb).
- * 도서관·채플·본관 정면은 실제 사진(Wikimedia Commons, 출처: /credits.html)을 입힌 면이라
+ * 계명대학교 건물들 (scripts/scenery/build_scenery.py → campus.glb): 정문 · 동산도서관 · 언덕 위 본관 · 대로 옆 건물.
+ * 도서관·본관 정면과 벽 무늬는 실제 사진(Wikimedia Commons, 출처: /credits.html)을 입힌 면이라
  * 조명 없이 사진 그대로 그리고, 정문·지붕 등 모델링한 부분은 장면 빛을 받는다.
  */
-export function Campus({ layout }: { layout: GalleryLayout }) {
+export function Campus({ site }: { site: SitePlan }) {
   const gltf = useGLTF(SCENERY.campus, SCENERY.draco);
-  const plan = useMemo(() => campusPlan(layout), [layout]);
+  const plan = site.buildings;
 
   const nodes = useMemo(() => {
     const photoMats = new Map<THREE.Material, THREE.Material>();
@@ -33,7 +32,7 @@ export function Campus({ layout }: { layout: GalleryLayout }) {
       const src = gltf.scene.getObjectByName(p.node);
       if (!src) return null;
       const obj = src.clone(true);
-      obj.position.set(p.x, 0, p.z);
+      obj.position.set(p.x, p.y ?? 0, p.z);
       obj.rotation.set(0, p.rot, 0);
       obj.traverse((o) => {
         const m = o as THREE.Mesh;
@@ -50,7 +49,7 @@ export function Campus({ layout }: { layout: GalleryLayout }) {
     });
   }, [gltf, plan]);
 
-  const gate = nodes[0];
+  const gate = nodes[plan.findIndex((p) => p.node === "bld_gate")];
   const textAnchor = useMemo(() => gate?.getObjectByName("gate_text") ?? null, [gate]);
 
   return (

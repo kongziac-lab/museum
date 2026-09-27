@@ -6,8 +6,9 @@ import { RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
 import { WALK, goTo, useGallery, type GalleryLayout, type Stop } from "@/lib/gallery";
-import { FONT, fitText, useCanvasTexture, useLazyTexture } from "./common";
-import { useGranite } from "./Grounds";
+import { FONT, SCENERY, fitText, useCanvasTexture, useLazyTexture } from "./common";
+import { useTexture } from "@react-three/drei";
+import type { SitePlan } from "./sitePlan";
 
 /* 공용 재질 */
 const frameMat = new THREE.MeshStandardMaterial({ color: "#26282b", metalness: 0.6, roughness: 0.38 });
@@ -170,9 +171,10 @@ export function GroupSign({ stop, layout }: { stop: Stop; layout: GalleryLayout 
 
 /* ───────────────────────── 입구 표석 ───────────────────────── */
 
-export function Monument({ layout }: { layout: GalleryLayout }) {
+export function Monument({ site }: { site: SitePlan }) {
   const info = useGallery((s) => s.info);
-  const granite = useGranite();
+  const [gMap, gNrm] = useTexture([SCENERY.tex("granite_diffuse"), SCENERY.tex("granite_nor_gl")]);
+  const granite = useMemo(() => ({ map: gMap, normalMap: gNrm }), [gMap, gNrm]);
   const top = info.상단문구 ?? "";
   const title = info.제목 ?? "한글 이름 꾸미기 대회";
   const sub = info.부제 ?? "수상작 전시";
@@ -203,11 +205,11 @@ export function Monument({ layout }: { layout: GalleryLayout }) {
   const plinth = useMemo(() => new THREE.MeshStandardMaterial({ ...granite, color: "#bdb9b2", roughness: 1 }), [granite]);
   const W = 3.4;
   const H = 1.06;
-  // 정문을 지나 원에 닿기 전 왼쪽 잔디
-  const x = -(WALK.pathWidth / 2 + 4.2);
-  const z = layout.radius + 8.5;
+  // 광장에 들어서자마자 왼쪽 (걸어오는 관람객을 비스듬히 본다)
+  const x = -16;
+  const z = site.R + 33;
   return (
-    <group position={[x, 0, z]} rotation={[0, 0.55, 0]}>
+    <group position={[x, 0, z]} rotation={[0, 0.5, 0]}>
       <mesh position={[0, 0.12, 0]} material={plinth} castShadow receiveShadow>
         <boxGeometry args={[W + 0.4, 0.24, 0.9]} />
       </mesh>

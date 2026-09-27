@@ -1,10 +1,10 @@
 # 한글 이름 꾸미기 대회 · 수상작 3D 전시관
 
-수상작 이미지와 캡션(이름·국적·수상 부문)만 넣으면, 계명대학교 캠퍼스를 본뜬 분수 광장을 한 바퀴 돌며 한 작품씩 감상하는 3D 전시가 만들어집니다.
+수상작 이미지와 캡션(이름·국적·수상 부문)만 넣으면, 계명대학교 성서캠퍼스의 정문에서 분수 광장까지 걸어 들어가 분수를 한 바퀴 돌며 한 작품씩 감상하는 3D 전시가 만들어집니다.
 
 <img src="docs/title.png" width="49%"> <img src="docs/gallery.png" width="49%">
 
-- **정문**(흰 열주)을 지나 들어가면 창립 120주년 기념 분수를 가운데 둔 광장이 있고, 둘레로 **동산도서관·본관·채플**이 서 있습니다. 건물 정면은 실제 사진을 입힌 3D 모델입니다.
+- **정문**(흰 열주) → 가운데 화단이 있는 **대로** → 헤링본 벽돌 **광장**(화강암 뚜껑 벽돌 화단·다듬은 반송·둥근 향나무·표석·비석) → 창립 120주년 기념 **분수** → **동산도서관** 순서로, 캠퍼스 소개 영상과 광장 사진을 따라 배치했습니다. 먼 언덕 위에 **본관**이, 대로 양옆에 녹색 지붕 건물이 보입니다. 건물 정면은 실제 사진을 입힌 3D 모델입니다.
 - 작품은 분수를 둘러싼 산책로 안쪽에 **대상 → 최우수상 → 우수상 → 장려상** 순서로 서 있어, 어느 작품을 보든 뒤로 분수와 건물이 보입니다. 부문이 바뀌는 곳에는 표지판이 있습니다.
 - **스크롤·화면 밀기·‹ › 버튼·← → 키** 중 무엇으로든 다음 작품 앞까지 걸어가 멈춥니다. 키를 누르고 있을 필요가 없습니다.
 - 아래 **작품 띠**나 **작품 목록**에서 원하는 작품을 누르면 그 작품 앞으로 바로 걸어갑니다.
@@ -104,17 +104,19 @@ npm run dev
 |---|---|
 | `scripts/scenery/gen-trees.mjs` | [ez-tree](https://github.com/dgreenheck/ez-tree)로 나무 8종 모양(OBJ) |
 | `scripts/scenery/prep_facades.py` | 건물 사진의 원근을 바로잡고 하늘을 지운 외벽 텍스처 |
-| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(건물·정문) |
+| `scripts/scenery/gen_textures.py` | 헤링본 포장·화단 벽돌·화강암·아스팔트·회양목·먼 산 숲 재질 (광장 사진 색 기준) |
+| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(건물·정문·반송·향나무·표석) |
 
 ```bash
 W=scenery-src   # 작업 폴더 (저장소에 넣지 않음)
 node scripts/scenery/gen-trees.mjs $W/trees
 python3 scripts/scenery/prep_facades.py $W/kmu $W/facades   # $W/kmu 에 건물 사진 (출처: public/credits.html)
+python3 scripts/scenery/gen_textures.py public/scenery/tex
 /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
   --python scripts/scenery/build_scenery.py -- --work $W --out public/scenery
 ```
 
-하늘(HDRI)·잔디·벽돌·화강암 재질은 [Poly Haven](https://polyhaven.com)(CC0)에서 받아 웹용으로 줄인 것입니다(`public/scenery/env`, `public/scenery/tex`).
+하늘(HDRI, 땅 없는 하늘만)과 잔디 재질은 [Poly Haven](https://polyhaven.com)(CC0)에서 받아 웹용으로 줄인 것입니다(`public/scenery/env`, `public/scenery/tex`). 광장 배치는 `src/components/gallery/scene/sitePlan.ts`에 모여 있습니다.
 
 ## 조작법
 
@@ -128,7 +130,7 @@ python3 scripts/scenery/prep_facades.py $W/kmu $W/facades   # $W/kmu 에 건물 
 
 ## 참고: 원본 대비 바뀐 점
 
-> 지금 전시 화면은 `src/components/gallery/`(분수 광장 둘레 산책로, 3D 배경은 `scene/`)입니다. 아래는 처음 만든 실내 전시관(`src/components/museum/`) 기준 설명이며, 그 코드는 `/editor`·`/admin`과 함께 남아 있지만 첫 화면에서는 쓰이지 않습니다.
+> 지금 전시 화면은 `src/components/gallery/`(정문 → 광장 → 분수 둘레, 3D 배경은 `scene/`)입니다. 아래는 처음 만든 실내 전시관(`src/components/museum/`) 기준 설명이며, 그 코드는 `/editor`·`/admin`과 함께 남아 있지만 첫 화면에서는 쓰이지 않습니다.
 
 이 프로젝트는 [museum-engine](https://github.com/gecapistrano/museum-engine)(MIT License)을 바탕으로 만들었습니다.
 

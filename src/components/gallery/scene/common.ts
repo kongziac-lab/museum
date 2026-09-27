@@ -7,8 +7,8 @@ export const FONT = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "No
 
 /** 배경 에셋 (scripts/scenery/ 로 만든 것) */
 export const SCENERY = {
-  hdr: "/scenery/env/park_1k.hdr",
-  bg: { high: "/scenery/env/park_bg_6k.jpg", low: "/scenery/env/park_bg_4k.jpg" },
+  hdr: "/scenery/env/sky_1k.hdr",
+  bg: { high: "/scenery/env/sky_bg_6k.jpg", low: "/scenery/env/sky_bg_4k.jpg" },
   fountain: "/scenery/fountain.glb",
   trees: "/scenery/trees.glb",
   campus: "/scenery/campus.glb",
@@ -17,13 +17,15 @@ export const SCENERY = {
 };
 
 /**
- * HDRI(charolettenbrunn_park)의 해: u = 0.6, 고도 58.4°.
- * ENV_ROTATION만큼 돌려서 HDRI 속 서양식 집들(u ≈ 0.97)은 북쪽 도서관 뒤에 숨기고,
- * 침엽수 숲은 남쪽 정문 뒤로 오게 한다. 해는 남서쪽 높이 — 입구에서 정문·분수를 앞에서 비춘다.
+ * 하늘(HDRI aristea_wreck_puresky, 땅 없는 하늘만)의 해: u = 0.625, 고도 47°.
+ * ENV_ROTATION만큼 돌려서 해는 남동쪽(광장 사진처럼 오른쪽 뒤)에서 비추고,
+ * 파란 하늘 쪽이 북쪽 도서관 위에 오게 한다 (조각구름 띠는 머리 위로).
  */
-export const ENV_ROTATION = -1.76;
-const SUN_U = 0.6;
-const SUN_ELEV = THREE.MathUtils.degToRad(58.4);
+export const ENV_ROTATION = -0.142;
+const SUN_U = 0.625;
+const SUN_ELEV = THREE.MathUtils.degToRad(47.1);
+/** 먼 산이 흐려지는 안개 색 (하늘 지평선 색) */
+export const HAZE = "#7b8799";
 
 /** 월드 기준 해 방향 (단위 벡터, 땅에서 해 쪽) */
 export function sunDirection() {

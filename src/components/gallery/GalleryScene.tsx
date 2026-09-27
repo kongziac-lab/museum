@@ -6,7 +6,10 @@ import * as THREE from "three";
 import { useGallery, type GalleryLayout } from "@/lib/gallery";
 import type { Quality } from "./scene/common";
 import { Atmosphere } from "./scene/Atmosphere";
-import { Lawn, Paths } from "./scene/Grounds";
+import { Site, useSiteMaterials } from "./scene/Grounds";
+import { Terrain } from "./scene/Terrain";
+import { Planters } from "./scene/Planters";
+import { sitePlan, type SitePlan } from "./scene/sitePlan";
 import { Fountain } from "./scene/Fountain";
 import { Forest } from "./scene/Forest";
 import { Campus } from "./scene/Campus";
@@ -48,6 +51,18 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
   return null;
 }
 
+/** 땅 · 광장 · 화단 (재질을 한 번 불러 함께 쓴다) */
+function Grounds({ site }: { site: SitePlan }) {
+  const mats = useSiteMaterials();
+  return (
+    <>
+      <Terrain plan={site} />
+      <Site plan={site} mats={mats} />
+      <Planters plan={site} mats={mats} />
+    </>
+  );
+}
+
 /** Suspense 안의 배경이 모두 준비되면 알린다. */
 function SceneryReady() {
   useEffect(() => {
@@ -60,6 +75,7 @@ function SceneryReady() {
 
 export function GalleryScene({ layout, quality }: { layout: GalleryLayout; quality: Quality }) {
   const background = useGallery((s) => s.background);
+  const site = useMemo(() => sitePlan(layout), [layout]);
   const current = useGallery((s) => s.current);
   const nearest = Math.round(current);
   const settled = Math.abs(current - nearest) < 0.2;
@@ -68,12 +84,11 @@ export function GalleryScene({ layout, quality }: { layout: GalleryLayout; quali
     <>
       <Suspense fallback={null}>
         <Atmosphere quality={quality} radius={layout.radius} panorama={background?.panorama ? background : null} />
-        <Lawn layout={layout} />
-        <Paths layout={layout} />
+        <Grounds site={site} />
         <Fountain quality={quality} />
-        <Forest layout={layout} quality={quality} />
-        <Campus layout={layout} />
-        <Monument layout={layout} />
+        <Forest site={site} quality={quality} />
+        <Campus site={site} />
+        <Monument site={site} />
         {layout.stops.map((s) => (
           <group key={s.art.id}>
             {s.groupStart && <GroupSign stop={s} layout={layout} />}

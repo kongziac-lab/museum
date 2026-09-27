@@ -408,7 +408,7 @@ def build_fountain():
 def render_preview(path, target, cam):
     """확인용 Cycles 렌더 (HDRI 조명 + 잔디 바닥)."""
     s = bpy.context.scene
-    hdr = os.path.join(OUT, "env", "park_1k.hdr")
+    hdr = os.path.join(OUT, "env", "sky_1k.hdr")
     if os.path.exists(hdr):
         nt = s.world.node_tree
         env = nt.nodes.new("ShaderNodeTexEnvironment")
@@ -776,19 +776,6 @@ def build_campus():
     box_walls("photo_library", -W / 2 + 0.02, W / 2 - 0.02, 0.02, D, 0, 27, tile, lib, tile=(13.5, 16.0), front=False, roof_mat=roof_grey)
     box_walls("library_pent", -15.7, 15.7, 4.05, D - 6, 27, H - 0.1, brick_flat, lib, roof_mat=roof_grey, front=False)
 
-    # ── 채플: 정면 사진 25 × 20 m, 가운데 박공 + 양쪽 탑 ──
-    ch = building("bld_chapel")
-    W, H = 25.0, 20.0
-    face = photo_material("photo_chapel_face", f"{F}/chapel_face.png", alpha=True)
-    tile = photo_material("photo_chapel_tile", f"{F}/chapel_tile.jpg")
-    quad("photo_chapel_front", [(-W / 2, 0, 0), (W / 2, 0, 0), (W / 2, 0, H), (-W / 2, 0, H)], [(0, 0), (1, 0), (1, 1), (0, 1)], face, ch)
-    box_walls("photo_chapel_nave", -6.3, 6.3, 0.05, 30, 0, 12.5, tile, ch, tile=(3.9, 6.4), front=False)
-    gable_roof("chapel_roof", -6.8, 6.8, 0.3, 30.5, 12.5, 17.0, roof_dark, ch)
-    for sx in (-1, 1):
-        x0, x1 = sorted((sx * 6.3, sx * 12.5))
-        box_walls(f"photo_chapel_tower{sx:+d}", x0, x1, 0.05, 8, 0, 16.0, tile, ch, tile=(3.9, 6.4), front=False, roof_mat=roof_dark)
-        box_walls(f"photo_chapel_aisle{sx:+d}", x0, x1, 8, 28, 0, 9.5, tile, ch, tile=(3.9, 6.4), front=False, roof_mat=roof_dark)
-
     # ── 본관: 가운데 사진 34.5 × 25 m (포르티코·탑) + 양 날개 22 m(창 한 칸 반복) + 파란 지붕 ──
     mn = building("bld_main")
     W, H = 34.5, 25.0
@@ -806,12 +793,75 @@ def build_campus():
         box_walls(f"photo_main_wing{sx:+d}", x0, x1, 0.05, 14, 0, 10.5, wing, mn, tile=(1.38, 8.4), front=False)
         gable_roof(f"main_roof{sx:+d}", x0 - 0.2, x1 + 0.2, -0.4, 14.4, 10.5, 13.0, roof_blue, mn, along="x")
 
-    # ── 전산관 자리 (사진이 없어 도서관 창 무늬를 쓴 붉은 벽돌 건물) ──
-    cc = building("bld_computing")
-    tile = bpy.data.materials["photo_library_tile"]
-    box_walls("photo_computing", -16, 16, 0, 20, 0, 16, tile, cc, tile=(13.5, 16.0), roof_mat=roof_grey)
+    # ── 광장 양옆 건물 (영상 속 녹색 지붕 붉은 벽돌 건물) ──
+    roof_green = plain_material("roof_green", (0.22, 0.38, 0.3), rough=0.6)
+    lib_tile = bpy.data.materials["photo_library_tile"]
+    floors = photo_material("photo_main_floors", f"{F}/main_floors.jpg")
+    sw = building("bld_side_w")  # 4층, 도서관 창 무늬
+    box_walls("photo_side_w", -28, 28, 0, 16, 0, 16, lib_tile, sw, tile=(13.5, 16.0))
+    gable_roof("side_w_roof", -28.4, 28.4, -0.4, 16.4, 16, 20.5, roof_green, sw, along="x")
+    se = building("bld_side_e")  # 4층, 본관 날개 창 무늬
+    box_walls("photo_side_e", -24, 24, 0, 14, 0, 12.74, floors, se, tile=(1.38, 6.37))
+    gable_roof("side_e_roof", -24.4, 24.4, -0.4, 14.4, 12.74, 16.5, roof_green, se, along="x")
 
-    # ── 정문: 가운데 박공 현관(기둥 2×2쌍) + 양쪽 열주랑 ──
+    # ── 광장 소품: 다듬은 반송 · 둥근 향나무 · 자연석 표석 ──
+    hedge = pbr_material("hedge", os.path.join(OUT, "tex", "hedge_diffuse.jpg"), os.path.join(OUT, "tex", "hedge_nor_gl.jpg"), None, rough=0.85)
+    pine_bark = bark_material("pine")
+    rock = pbr_material("rock", os.path.join(OUT, "tex", "granite_diffuse.jpg"), os.path.join(OUT, "tex", "granite_nor_gl.jpg"), None, rough=0.8)
+    rock.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.55, 0.54, 0.52, 1)
+    rnd = np.random.default_rng(12)
+
+    def blob(name, center, scale, subdiv, jitter, mat, parent):
+        me = bpy.data.meshes.new(name)
+        bm = bmesh.new()
+        bmesh.ops.create_icosphere(bm, subdivisions=subdiv, radius=1.0, calc_uvs=True)
+        for v in bm.verts:
+            k = 1 + (rnd.random() - 0.5) * 2 * jitter
+            v.co = Vector((v.co.x * scale[0] * k, v.co.y * scale[1] * k, v.co.z * scale[2] * k)) + Vector(center)
+        bm.to_mesh(me)
+        bm.free()
+        for p in me.polygons:
+            p.use_smooth = True
+        me.materials.append(mat)
+        ob = bpy.data.objects.new(name, me)
+        bpy.context.collection.objects.link(ob)
+        ob.parent = parent
+        return ob
+
+    def limb(name, a, b, r0, r1, mat, parent):
+        a, b = Vector(a), Vector(b)
+        d = b - a
+        me = bpy.data.meshes.new(name)
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=False, segments=10, radius1=r0, radius2=r1, depth=d.length, calc_uvs=True)
+        rot = d.to_track_quat("Z", "Y").to_matrix().to_4x4()
+        for v in bm.verts:
+            v.co = rot @ Vector((v.co.x, v.co.y, v.co.z + d.length / 2)) + a
+        bm.to_mesh(me)
+        bm.free()
+        for p in me.polygons:
+            p.use_smooth = True
+        me.materials.append(mat)
+        ob = bpy.data.objects.new(name, me)
+        bpy.context.collection.objects.link(ob)
+        ob.parent = parent
+        return ob
+
+    tp = building("prop_topiary_pine")  # 구름처럼 층층이 다듬은 반송 (높이 ≈ 4 m)
+    trunk = [(0, 0, 0), (0.25, 0.05, 0.9), (-0.15, 0.1, 1.8), (0.1, -0.05, 2.7), (0.0, 0.0, 3.4)]
+    for i in range(len(trunk) - 1):
+        limb(f"tp_trunk{i}", trunk[i], trunk[i + 1], 0.2 - i * 0.035, 0.2 - (i + 1) * 0.035, pine_bark, tp)
+    pads = [(-1.35, 0.3, 1.85, 1.25), (1.25, -0.35, 2.25, 1.15), (-0.8, -1.0, 2.75, 0.95), (0.75, 0.85, 3.0, 0.95), (0.05, 0.0, 3.65, 0.9)]
+    for i, (x, y, z, r) in enumerate(pads):
+        base = trunk[min(int(z / 0.9), 3)]
+        limb(f"tp_branch{i}", base, (x * 0.8, y * 0.8, z - 0.15), 0.08, 0.04, pine_bark, tp)
+        blob(f"tp_pad{i}", (x, y, z), (r, r * 0.9, r * 0.38), 3, 0.1, hedge, tp)
+    tb = building("prop_topiary_ball")  # 둥글게 다듬은 향나무 (반지름 1 m, 웹에서 크기 조절)
+    blob("tb_ball", (0, 0, 0.85), (1.0, 1.0, 0.85), 3, 0.06, hedge, tb)
+    rk = building("prop_rock")  # 자연석 표석 (웹에서 크기 조절)
+    blob("rock_body", (0, 0, 0.95), (0.8, 0.32, 1.0), 2, 0.14, rock, rk)
+
+    # ── 정문: 가운데 박공 현관(기둥 2×2쌍) + 양쪽 열주랑 (현관과 열주랑 사이로 차도가 지난다) ──
     gt = building("bld_gate")
     colH, colR = 8.2, 0.55
     for sx in (-1, 1):
@@ -826,10 +876,10 @@ def build_campus():
     wH, wR = 6.4, 0.42
     for sx in (-1, 1):
         for k in range(6):
-            x = sx * (11.0 + k * 2.9)
+            x = sx * (16.0 + k * 2.9)
             for y in (-1.3, 1.3):
                 fluted_column(f"gate_wcol{sx:+d}_{k}_{y}", wR, wH, gt, (x, y, 0), stone, flutes=16)
-        x0, x1 = sorted((sx * 10.2, sx * 26.3))
+        x0, x1 = sorted((sx * 15.2, sx * 31.3))
         slab(f"gate_wing_arch{sx:+d}", x0, x1, -1.9, 1.9, wH, wH + 0.55, stone, gt, 0.03)
         slab(f"gate_wing_frieze{sx:+d}", x0 + 0.1, x1 - 0.1, -1.8, 1.8, wH + 0.55, wH + 1.1, stone, gt)
         slab(f"gate_wing_cornice{sx:+d}", x0 - 0.3, x1 + 0.3, -2.1, 2.1, wH + 1.1, wH + 1.45, stone, gt, 0.04)
@@ -842,8 +892,12 @@ def build_campus():
     if "--preview" in opts:
         for o in bpy.data.objects:
             if o.parent is None and o.type == "EMPTY" and o.name.startswith("bld_"):
-                o.location = {"bld_library": (0, 60, 0), "bld_chapel": (-50, 20, 0), "bld_main": (55, 25, 0), "bld_computing": (-45, 70, 0), "bld_gate": (0, -20, 0)}[o.name]
-                o.rotation_euler.z = {"bld_library": 0, "bld_chapel": -1.2, "bld_main": 1.1, "bld_computing": -0.6, "bld_gate": 0}[o.name]
+                pos = {"bld_library": (0, 60, 0), "bld_main": (-70, 150, 15), "bld_side_w": (-45, 20, 0), "bld_side_e": (45, 20, 0), "bld_gate": (0, -20, 0)}
+                rot = {"bld_library": 0, "bld_main": -0.4, "bld_side_w": -math.pi / 2, "bld_side_e": math.pi / 2, "bld_gate": 0}
+                o.location = pos[o.name]
+                o.rotation_euler.z = rot[o.name]
+            elif o.parent is None and o.type == "EMPTY" and o.name.startswith("prop_"):
+                o.location = {"prop_topiary_pine": (-8, 0, 0), "prop_topiary_ball": (8, 0, 0), "prop_rock": (4, -4, 0)}[o.name]
         render_preview(opts["--preview"], target=(0, 30, 10), cam=(0, -60, 8))
 
 

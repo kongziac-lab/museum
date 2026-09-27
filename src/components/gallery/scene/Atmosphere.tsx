@@ -5,7 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Environment, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import type { ExhibitionBackground } from "@/lib/types";
-import { ENV_ROTATION, SCENERY, sunDirection, type Quality } from "./common";
+import { ENV_ROTATION, HAZE, SCENERY, sunDirection, type Quality } from "./common";
 
 /**
  * 하늘과 빛: 실사 360° 공원 사진(HDRI)을 배경과 주변광으로 쓰고,
@@ -38,12 +38,14 @@ export function Atmosphere({
 
   return (
     <>
+      {/* 먼 숲 언덕이 하늘빛으로 흐려지게 (가까운 광장에는 거의 안 걸린다) */}
+      <fog attach="fog" args={[HAZE, 160, 1500]} />
       {/* Environment는 불러온 뒤 배경 회전값도 덮어쓰므로 같은 값을 넘긴다 */}
       <Environment
         files={SCENERY.hdr}
         environmentRotation={[0, ENV_ROTATION, 0]}
         backgroundRotation={[0, bgRotation, 0]}
-        environmentIntensity={0.85}
+        environmentIntensity={0.9}
       />
       <Sun quality={quality} radius={radius} />
     </>

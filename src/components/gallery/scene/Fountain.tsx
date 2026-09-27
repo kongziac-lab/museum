@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useGLTF } from "@react-three/drei";
+import { useGLTF, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import { SCENERY, rng, type Quality } from "./common";
 
@@ -13,6 +13,8 @@ import { SCENERY, rng, type Quality } from "./common";
 export function Fountain({ quality }: { quality: Quality }) {
   const gltf = useGLTF(SCENERY.fountain, SCENERY.draco);
   const water = useWaterMaterial();
+  // 실제 분수는 밝은 회색 화강암 (사진) → 광장 경계석과 같은 밝은 화강암 무늬로 바꿔 입힌다
+  const lightGranite = useTexture(SCENERY.tex("granite_diffuse"));
 
   const { root, jets } = useMemo(() => {
     const root = gltf.scene.clone(true);
@@ -27,12 +29,19 @@ export function Fountain({ quality }: { quality: Quality }) {
         } else {
           m.castShadow = true;
           m.receiveShadow = true;
-          // 실제 분수는 밝은 회색 화강암 — 텍스처보다 밝게 (자갈은 그대로)
           const mats = (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[];
           m.material = mats.map((mat) => {
             if (!mat.name.startsWith("granite")) return mat;
             const c = mat.clone();
-            c.color.setScalar(mat.name === "granite_coping" ? 1.9 : 1.6);
+            const t = lightGranite.clone();
+            t.wrapS = t.wrapT = THREE.RepeatWrapping;
+            t.repeat.set(2, 2);
+            t.colorSpace = THREE.SRGBColorSpace;
+            t.needsUpdate = true;
+            c.map = t;
+            c.color.setScalar(mat.name === "granite_coping" ? 1.05 : 0.92);
+            c.roughness = mat.name === "granite_coping" ? 0.5 : 0.7;
+            c.roughnessMap = null;
             return c;
           });
           if (mats.length === 1) m.material = (m.material as THREE.Material[])[0];
@@ -42,7 +51,7 @@ export function Fountain({ quality }: { quality: Quality }) {
       if (k) jets[k].push(o.getWorldPosition(new THREE.Vector3()));
     });
     return { root, jets };
-  }, [gltf, water]);
+  }, [gltf, water, lightGranite]);
 
   return (
     <group>

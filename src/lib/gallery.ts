@@ -35,10 +35,10 @@ export const WALK = {
 } as const;
 
 export const RING = {
-  /** 산책로 원의 최소 반지름 (분수 자갈 띠 모서리 ≈ 8.2m + 작품·잔디 여유) */
-  minRadius: 15,
-  /** 입구 진입로 길이 (m) — 정문(원에서 14m 바깥)을 지나 들어온다 */
-  approach: 34,
+  /** 작품이 도는 원의 최소 반지름 (분수 잔디 화단 반폭 9 m, 모서리 12.7 m + 작품 여유) */
+  minRadius: 17,
+  /** 입구(정문 앞)에서 원까지 (m) — 정문 → 대로 → 광장을 지나 들어온다 (계명대 성서캠퍼스 축) */
+  approach: 106,
 } as const;
 
 export interface Stop {
@@ -89,25 +89,29 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
   const lookDrop = opts.portrait ? 0.75 : 0.32;
   const n = Math.max(arts.length, 1);
   // 원 둘레 = 작품이 차지하는 길이 + 마지막 작품과 입구 사이 여유
-  const ringNeeded = ringDist(n - 1) + WALK.spacing * 1.8;
+  const ringNeeded = ringDist(n - 1) + WALK.spacing * 1.8 + 0.42 * RING.minRadius;
   const radius = Math.max(RING.minRadius, ringNeeded / (Math.PI * 2));
   const entranceZ = radius + RING.approach;
 
-  // 진입로(남쪽에서 북쪽으로 곧게) → 원(φ=0 남쪽에서 시작, 분수를 왼쪽에 두고 돈다)
+  // 진입로: 정문 앞에서 대로 가운데 보행로를 따라 북쪽으로 →
+  // 광장 가운데 둥근 향나무 화단(원 바깥 12 m)을 오른쪽으로 비켜 → 원(φ=0 남쪽에서 시작, 분수를 왼쪽에 두고 돈다)
   const pts: THREE.Vector3[] = [];
-  for (let z = entranceZ + 2; z > radius + 2.5; z -= 2.5) pts.push(new THREE.Vector3(0, 0, z));
-  const phiEnd = (ringDist(n - 1) + WALK.spacing * 0.9) / radius;
-  const steps = Math.ceil(phiEnd / 0.08);
+  for (let z = entranceZ + 2; z > radius + 24; z -= 4) pts.push(new THREE.Vector3(0, 0, z));
+  pts.push(new THREE.Vector3(2.2, 0, radius + 20), new THREE.Vector3(5.2, 0, radius + 15), new THREE.Vector3(5.6, 0, radius + 9), new THREE.Vector3(5.2, 0, radius + 4));
+  // 원은 φ0(진입로가 닿는 곳)부터 돈다
+  const phi0 = 0.42;
+  const phiEnd = phi0 + (ringDist(n - 1) + WALK.spacing * 0.9) / radius;
+  const steps = Math.ceil((phiEnd - phi0) / 0.08);
   for (let k = 0; k <= steps; k++) {
-    const phi = 0.22 + (k / steps) * (phiEnd - 0.22);
+    const phi = phi0 + (k / steps) * (phiEnd - phi0);
     pts.push(new THREE.Vector3(Math.sin(phi) * radius, 0, Math.cos(phi) * radius));
   }
   const curve = new THREE.CatmullRomCurve3(pts, false, "centripetal");
   const length = curve.getLength();
   // 곡선은 입구보다 2m 뒤에서 시작한다. d = 0 이 입구.
   const origin = 2;
-  // 진입로가 원에 닿는 곳까지의 곡선 거리 (모퉁이를 부드럽게 돌아 원래보다 조금 짧다)
-  const joinDist = RING.approach - 1.2;
+  // 진입로가 원에 닿는 곳까지의 곡선 거리 (향나무 화단을 비켜 도는 만큼 조금 길다)
+  const joinDist = RING.approach + 2;
 
   const at = (d: number) => {
     const u = THREE.MathUtils.clamp((origin + d) / length, 0, 1);
@@ -157,8 +161,8 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
 
     const lookOf = (i: number, target: THREE.Vector3) => {
       if (i < 0 || !stops[i]) {
-        // 입구: 정문 너머 분수를 본다 (정문 박공까지 보이게 살짝 위로)
-        return target.set(0, 3.4, 0);
+        // 입구: 정문 너머 대로 끝의 분수와 도서관을 본다 (정문 박공까지 보이게 살짝 위로)
+        return target.set(0, 5.5, 0);
       }
       const s = stops[i];
       return target.set(s.center.x, s.center.y - lookDrop, s.center.z);

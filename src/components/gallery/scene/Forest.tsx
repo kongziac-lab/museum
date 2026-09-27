@@ -4,9 +4,8 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
-import { WALK, type GalleryLayout } from "@/lib/gallery";
 import { SCENERY, rng, type Quality } from "./common";
-import { blockedByCampus, campusPlan } from "./campusPlan";
+import { blockedBySite, type SitePlan } from "./sitePlan";
 
 /**
  * 나무 (ez-tree로 모양을 만들고 Blender에서 다듬은 trees.glb).
@@ -16,64 +15,61 @@ import { blockedByCampus, campusPlan } from "./campusPlan";
 type Place = { x: number; z: number; rot: number; scale: number; tint: number };
 
 const BIG = ["oak_a", "oak_b", "ash_a", "aspen_a", "pine_a", "pine_b"] as const;
-const BIG_WEIGHT = [0.22, 0.18, 0.2, 0.08, 0.17, 0.15];
+const BIG_WEIGHT = [0.17, 0.15, 0.14, 0.06, 0.26, 0.22];
 
-function placeTrees(layout: GalleryLayout, quality: Quality) {
-  const R = layout.radius;
+/** 광장 가로수(느티나무) · 대로 가로수 · 모서리 은행나무 · 둘레 잔디밭의 소나무와 활엽수 */
+function placeTrees(plan: SitePlan, quality: Quality) {
   const r = rng(4242);
   const out: Record<string, Place[]> = {};
   const add = (name: string, p: Place) => (out[name] ??= []).push(p);
   const taken: [number, number, number][] = [];
   const free = (x: number, z: number, d: number) => taken.every(([tx, tz, td]) => Math.hypot(tx - x, tz - z) > Math.max(d, td));
+  const put = (name: string, x: number, z: number, scale: number, gap = 5) => {
+    add(name, { x, z, rot: r() * 6.28, scale, tint: r() });
+    taken.push([x, z, gap]);
+  };
   const pick = () => {
     let v = r();
     for (let i = 0; i < BIG.length; i++) if ((v -= BIG_WEIGHT[i]) <= 0) return BIG[i];
     return BIG[0];
   };
-  const inApproach = (x: number, z: number, pad: number) => z > R - 2 && Math.abs(x) < WALK.pathWidth / 2 + pad;
-  // 계명대 건물 자리와 정면 시야는 비워 둔다
-  const plan = campusPlan(layout);
-  const onCampus = (x: number, z: number, m = 4) => blockedByCampus(plan, layout, x, z, m);
 
-  // 산책로 바깥 숲 (안쪽은 비워 분수가 잘 보이게)
-  const target = quality === "high" ? 75 : 40;
-  const inner = R + WALK.pathWidth / 2 + 5;
-  const outer = R + 62;
+  // 광장 양옆 격자 틀 느티나무
+  plan.gratedTrees.forEach(([x, z], i) => put(i % 3 === 0 ? "ash_a" : i % 2 ? "oak_a" : "oak_b", x, z, 1.15 + r() * 0.15));
+  // 광장 남쪽 모서리 은행나무 (사진)
+  for (const s of [-1, 1]) put("aspen_a", s * (plan.plazaX + 4), plan.plazaS - 6, 0.95);
+  // 대로 가로수
+  for (let z = plan.plazaS + 16; z < plan.roadS; z += 10) {
+    for (const s of [-1, 1]) put(z % 20 < 10 ? "oak_b" : "ash_a", s * (plan.roadX + 2.2), z, 0.95 + r() * 0.1, 4);
+  }
+  // 둘레 잔디밭: 광장·대로·건물 자리를 비워 두고 소나무 위주로
+  const target = quality === "high" ? 90 : 45;
   let guard = 0;
   let count = 0;
-  while (count < target && guard++ < target * 40) {
-    // 면적이 고르게: 반지름은 제곱근 분포
-    const rad = Math.sqrt(inner * inner + r() * (outer * outer - inner * inner));
-    const phi = r() * Math.PI * 2;
-    const x = Math.sin(phi) * rad;
-    const z = Math.cos(phi) * rad;
-    if (inApproach(x, z, 10) || onCampus(x, z)) continue;
-    const near = rad < inner + 8;
-    if (!free(x, z, near ? 6.5 : 5.2)) continue;
-    taken.push([x, z, 5]);
-    add(pick(), { x, z, rot: r() * 6.28, scale: 0.8 + r() * 0.45, tint: r() });
+  while (count < target && guard++ < target * 60) {
+    const x = (r() * 2 - 1) * 150;
+    const z = plan.plazaN - 60 + r() * (plan.roadS + 40 - (plan.plazaN - 60));
+    if (blockedBySite(plan, x, z, 3)) continue;
+    if (Math.abs(x) < plan.plazaX + 3 && z < plan.plazaS && z > plan.plazaN) continue;
+    const near = Math.abs(x) < plan.plazaX + 14;
+    if (!free(x, z, near ? 6.5 : 5.5)) continue;
+    put(pick(), x, z, 0.85 + r() * 0.45);
     count++;
   }
-  // 산책로 바깥 가장자리 관목
-  const edge = R + WALK.pathWidth / 2 + 1.4;
-  const step = 2.6 / edge;
-  for (let phi = 0; phi < Math.PI * 2; phi += step * (0.8 + r() * 0.5)) {
-    const x = Math.sin(phi) * edge;
-    const z = Math.cos(phi) * edge;
-    if (inApproach(x, z, 2.2) || r() < 0.18) continue;
-    add(r() < 0.6 ? "bush_a" : "bush_b", { x, z, rot: r() * 6.28, scale: 0.8 + r() * 0.5, tint: r() });
-  }
-  // 분수 자갈 띠 네 모서리
-  for (let k = 0; k < 4; k++) {
-    const a = Math.PI / 4 + (k * Math.PI) / 2;
-    add("bush_a", { x: Math.sin(a) * 9.2, z: Math.cos(a) * 9.2, rot: r() * 6.28, scale: 0.9, tint: r() });
+  // 광장 가장자리 잔디의 관목
+  for (let z = plan.plazaS - 3; z > plan.plazaN; z -= 3.4) {
+    for (const s of [-1, 1]) {
+      if (r() < 0.35) continue;
+      const x = s * (plan.plazaX + 1.4 + r() * 1.5);
+      add(r() < 0.6 ? "bush_a" : "bush_b", { x, z, rot: r() * 6.28, scale: 0.8 + r() * 0.5, tint: r() });
+    }
   }
   return out;
 }
 
-export function Forest({ layout, quality }: { layout: GalleryLayout; quality: Quality }) {
+export function Forest({ site, quality }: { site: SitePlan; quality: Quality }) {
   const gltf = useGLTF(SCENERY.trees, SCENERY.draco);
-  const places = useMemo(() => placeTrees(layout, quality), [layout, quality]);
+  const places = useMemo(() => placeTrees(site, quality), [site, quality]);
   const parts = useMemo(() => {
     const byName: Record<string, THREE.Mesh> = {};
     gltf.scene.traverse((o) => {
