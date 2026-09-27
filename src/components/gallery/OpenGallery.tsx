@@ -6,7 +6,7 @@ import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
-import { arrivedAtFirstAgain, buildLayout, canLoop, goTo, offStop, step, stopIndex, useGallery, type GalleryLayout } from "@/lib/gallery";
+import { buildLayout, canLoop, goTo, offStop, step, stopIndex, useGallery, type GalleryLayout } from "@/lib/gallery";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
 import { GalleryScene } from "./GalleryScene";
 import { detectQuality, type Quality } from "./scene/common";
@@ -38,19 +38,29 @@ function snap(direction: number) {
   s.setTarget(next);
 }
 
-/** 크게 보기에서 이전·다음 작품 (마지막 다음은 첫 작품 — 뒤에서는 카메라도 원을 따라 이어 걷는다) */
-function moveDetail(d: number) {
+/**
+ * 크게 보기에서 이전·다음 작품. 카메라 목표도 한 칸 옮겨 닫으면 그 작품 앞에 서 있게 한다
+ * (원을 따라 끝없이: 마지막 다음은 첫 작품, 첫 작품 이전은 마지막 작품).
+ */
+function moveDetail(d: 1 | -1) {
   const s = useGallery.getState();
   if (s.detail === null) return;
   const n = s.arts.length;
-  let next = s.detail + d;
-  if (next >= n) {
-    if (!canLoop(n)) return;
-    next = 0;
+  if (!canLoop(n)) {
+    const next = s.detail + d;
+    if (next < 0 || next >= n) return;
+    s.openDetail(next);
+    goTo(next);
+    return;
   }
-  if (next < 0) return;
-  s.openDetail(next);
-  goTo(next, d > 0 ? 1 : -1); // 닫으면 그 작품 앞에 서 있도록 (마지막 다음이면 뒤에서 원을 따라 이어 걷는다)
+  // 보고 있는 작품의, 지금 목표에서 가장 가까운 바퀴 자리에서 한 칸 (빠르게 눌러도 목표 기준이라 어긋나지 않는다)
+  const base = Math.round(s.target);
+  let here = s.detail + Math.round((base - s.detail) / n) * n;
+  if (here < 0) here = s.detail;
+  let next = here + d;
+  if (next < 0) next = n - 1; // 진입로에서 첫 작품 이전 → 마지막 작품
+  s.setTarget(next);
+  s.openDetail(stopIndex(next, n));
 }
 
 function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
@@ -270,7 +280,7 @@ function Caption({ layout }: { layout: GalleryLayout | null }) {
             <p className="mt-3 text-center text-xs text-stone-500">
               마지막 작품입니다 ·{" "}
               {/* 되감지 않고 분수를 돌아 첫 작품까지 이어 걷는다 */}
-              <button onClick={() => goTo(0, 1)} className="font-bold text-stone-800 underline">
+              <button onClick={() => goTo(0)} className="font-bold text-stone-800 underline">
                 처음으로
               </button>
             </p>
@@ -327,15 +337,18 @@ function Hud({ layout }: { layout: GalleryLayout | null }) {
   const toggleList = useGallery((s) => s.toggleList);
   const idx = Math.round(target);
   const n = arts.length;
-  // 첫 작품 앞이면 ‹ 는 쓸 수 없다 (한 바퀴 돌아 막 도착해 목표 번호가 아직 n 일 때도)
-  const atFirst = idx === 0 || arrivedAtFirstAgain();
-  const atLast = stopIndex(idx, n) === n - 1;
-  // 한 번 움직였으면 안내 문구는 다시 띄우지 않는다 (한 바퀴 돌아 첫 작품으로 와도)
+  const stop = stopIndex(idx, n);
+  // ‹ 는 진입로를 걸어 들어오는 동안(목표가 아직 첫 바퀴 첫 작품)만 쓸 수 없다 — 원 위에서는 첫 작품 이전이 마지막 작품
+  const prevOff = idx <= 0;
+  const atFirst = stop === 0;
+  const atLast = stop === n - 1;
+  // 안내 문구: 첫 작품 앞에 처음 섰을 때만. 다른 작품으로 한 번 옮기면 다시 띄우지 않는다 (한 바퀴 돌아 와도)
   const [movedOnce, setMovedOnce] = useState(false);
-  const moved = movedOnce || Math.abs(current) > 0.5 || idx > 0;
+  const leftFirst = started && idx >= 0 && stop !== 0;
   useEffect(() => {
-    if (moved && !movedOnce) setMovedOnce(true);
-  }, [moved, movedOnce]);
+    if (leftFirst) setMovedOnce(true);
+  }, [leftFirst]);
+  const moved = movedOnce || leftFirst || !(stopIndex(current, n) === 0 && current > -0.5);
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   if (!started) return null;
   return (
@@ -375,7 +388,13 @@ function Hud({ layout }: { layout: GalleryLayout | null }) {
           <Caption layout={layout} />
         </div>
         <div className="flex w-full items-center justify-center gap-3">
-          <button onClick={() => step(-1)} disabled={idx < 0 || atFirst} className={`${btn} h-12 w-12 text-2xl md:h-14 md:w-14`} aria-label="이전 작품">
+          <button
+            onClick={() => step(-1)}
+            disabled={prevOff}
+            className={`${btn} h-12 w-12 text-2xl md:h-14 md:w-14`}
+            aria-label={atFirst && canLoop(n) ? "마지막 작품으로" : "이전 작품"}
+            title={atFirst && canLoop(n) ? "마지막 작품으로" : undefined}
+          >
             ‹
           </button>
           <Filmstrip />
@@ -501,8 +520,12 @@ function Detail() {
             {art.nationality && <p className="mt-1 text-stone-500">{art.nationality}</p>}
             {art.description && <p className="mt-4 whitespace-pre-line leading-relaxed text-stone-700">{art.description}</p>}
             <div className="mt-6 flex items-center gap-2">
-              <button onClick={() => moveDetail(-1)} disabled={detail <= 0} className="flex-1 rounded-xl bg-stone-100 py-2.5 font-bold disabled:opacity-40">
-                ‹ 이전
+              <button
+                onClick={() => moveDetail(-1)}
+                disabled={!canLoop(arts.length) && detail <= 0}
+                className="flex-1 rounded-xl bg-stone-100 py-2.5 font-bold disabled:opacity-40"
+              >
+                {detail === 0 && canLoop(arts.length) ? "‹ 마지막으로" : "‹ 이전"}
               </button>
               <button
                 onClick={() => moveDetail(1)}

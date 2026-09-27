@@ -4,9 +4,10 @@
  * 분수가 원점에 있고, 산책로는 그 둘레를 원으로 돈다. 입구 진입로는 남쪽(+z)에서 곧게 들어온다.
  * 작품은 길 안쪽(분수 쪽) 잔디에 서서, 어느 작품을 보든 뒤로 분수가 보인다.
  * 관람객(카메라)은 분수를 왼쪽에 두고 길을 따라 걸으며 작품 앞에 한 점씩 멈춘다.
- * 위치는 연속값 t 하나로 표현한다: t = -1 입구, t = i 는 i번째 작품 앞.
- * 마지막 작품(n-1) 다음은 원을 따라 계속 걸어 첫 작품으로 이어진다: n-1 < t < n 이 그 고리 구간이고,
- * t = n 은 한 바퀴 돌아 다시 선 첫 작품이다 (t ≥ n 은 t - n 과 같은 자리, 카메라가 도착하면 되돌려 센다).
+ * 위치는 연속값 t 하나로 표현한다: t = -1 입구, -1 < t < 0 진입로, t = i 는 i번째 작품 앞.
+ * 원은 끝없이 이어진다: 마지막 작품(n-1) 다음은 고리 구간(n-1 < t < n)을 지나 첫 작품(t = n)이고,
+ * t ≥ 0 에서 t 와 t + n 은 같은 자리다 (바퀴 번호만 다르다). 카메라(CameraRig)는 원 위에서
+ * 목표와 함께 바퀴 번호를 옮겨 세어 n ≤ t < 2n 근처에 둔다 → 앞으로도 뒤로도 한 바퀴 이어 돌 수 있다.
  */
 
 import * as THREE from "three";
@@ -86,15 +87,24 @@ export function canLoop(n: number) {
   return n >= 2;
 }
 
-/** 목표 위치 t 의 끝: 이어 돌 수 있으면 한 바퀴 더(첫 작품 = n … 마지막 = 2n-1)까지 */
+/** 목표 위치 t 의 끝 (카메라가 바퀴 번호를 옮겨 세므로 실제로는 2n 근처를 넘지 않는다) */
 export function maxTarget(n: number) {
-  return canLoop(n) ? 2 * n - 1 : Math.max(n - 1, 0);
+  return canLoop(n) ? 4 * n : Math.max(n - 1, 0);
 }
 
-/** 위치 t → 가장 가까운 작품 번호 (-1 = 입구). 고리 구간 끝·한 바퀴 넘은 자리는 처음부터 다시 센다. */
+/** 위치 t → 가장 가까운 작품 번호 (-1 = 입구). 몇 바퀴째든 0 … n-1 로 센다. */
 export function stopIndex(t: number, n: number) {
   const i = Math.round(t);
   return n > 0 && i >= n ? i % n : i;
+}
+
+/** [lo, hi] 사이에 마지막 → 첫 작품 고리 구간(k·n + n-1 … (k+1)·n)이 끼어 있는가 */
+export function crossesLoop(lo: number, hi: number, n: number) {
+  if (!canLoop(n) || hi <= n - 1) return false;
+  for (let k = Math.max(0, Math.floor(lo / n) - 1); k <= Math.floor(hi / n) + 1; k++) {
+    if (hi > k * n + n - 1 && lo < (k + 1) * n) return true;
+  }
+  return false;
 }
 
 /**
@@ -217,23 +227,35 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
     loopR1 = Math.hypot(loopTo.x, loopTo.z);
     loopMetres = (loopPhi1 - loopPhi0) * (loopR0 + loopR1) / 2;
   }
-  // t = -1, 0, 1, … , n-1, n(한 바퀴 돈 첫 작품), … , 2n-1 에서 걸은 거리 — 사이는 직선으로 잇는다
+  // t = -1, 0, 1, … , n-1, n(한 바퀴 돈 첫 작품) 에서 입구부터 걸은 거리 — 사이는 직선으로 잇고,
+  // 그 뒤는 한 바퀴(lapM)씩 되풀이된다
   const walked: number[] = [0, ...stops.map((s) => s.viewDist)];
-  if (loops && loopMetres !== null) {
-    const lap = stops[last].viewDist + loopMetres - stops[0].viewDist;
-    for (let i = 0; i <= last; i++) walked.push(stops[i].viewDist + lap);
-  }
-  const metresAt = (t: number) => {
+  const lapM = loops && loopMetres !== null ? stops[last].viewDist + loopMetres - stops[0].viewDist : 0;
+  if (lapM > 0) walked.push(stops[0].viewDist + lapM);
+  const top = walked.length - 2; // 표가 덮는 t 의 끝
+  const fromTable = (t: number) => {
     const x = THREE.MathUtils.clamp(t + 1, 0, walked.length - 1);
     const k = Math.min(Math.floor(x), walked.length - 2);
     return k < 0 ? walked[0] : THREE.MathUtils.lerp(walked[k], walked[k + 1], x - k);
   };
-  const tAtMetres = (m: number) => {
+  const toTable = (m: number) => {
     if (walked.length < 2 || m <= walked[0]) return -1;
     for (let k = 0; k < walked.length - 1; k++) {
       if (m <= walked[k + 1]) return k - 1 + (m - walked[k]) / Math.max(walked[k + 1] - walked[k], 1e-6);
     }
-    return walked.length - 2;
+    return top;
+  };
+  const metresAt = (t: number) => {
+    if (!Number.isFinite(t)) return walked[0];
+    if (lapM <= 0 || t <= stops.length) return fromTable(t);
+    const laps = Math.floor(t / stops.length);
+    return fromTable(t - laps * stops.length) + laps * lapM;
+  };
+  const tAtMetres = (m: number) => {
+    if (!Number.isFinite(m)) return -1;
+    if (lapM <= 0 || m <= walked[walked.length - 1]) return toTable(m);
+    const laps = Math.floor((m - walked[1]) / lapM);
+    return toTable(m - laps * lapM) + laps * stops.length;
   };
 
   const lookOf = (i: number, target: THREE.Vector3) => {
@@ -247,8 +269,8 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
 
   const pose = (t: number, outPos: THREE.Vector3, outLook: THREE.Vector3) => {
     let tt = THREE.MathUtils.clamp(t, -1, maxTarget(stops.length));
-    // 한 바퀴 돈 뒤(t ≥ n)는 처음 바퀴와 같은 자리
-    if (loops && tt >= stops.length) tt -= stops.length;
+    // 몇 바퀴째든 같은 자리 (t 와 t + n)
+    if (loops && tt >= stops.length) tt %= stops.length;
     if (loops && tt > last) {
       const f = tt - last;
       const phi = THREE.MathUtils.lerp(loopPhi0, loopPhi1, f);
@@ -338,7 +360,11 @@ export const useGallery = create<GalleryState>((set, get) => ({
   setCurrent: (current) => set({ current }),
 
   started: false,
-  start: () => set({ started: true, target: 0 }),
+  // 첫 작품으로 (원 위에 있던 카메라라면 걸어서 가까운 쪽으로)
+  start: () => {
+    set({ started: true });
+    goTo(0);
+  },
 
   detail: null,
   openDetail: (detail) => set({ detail }),
@@ -348,47 +374,43 @@ export const useGallery = create<GalleryState>((set, get) => ({
 }));
 
 /**
- * 작품 i 로 이동 (관람 시작 전이면 시작 처리도 함께). i = -1 은 입구.
- * 작품 i 는 이번 바퀴(i)와 원을 따라 이어 간 다음 바퀴(i + n) 두 자리가 있다:
- *  - dir = 1: 지금 카메라보다 앞쪽 자리 (마지막 작품에서 '처음으로'·크게 보기 '다음'은 되감지 않고 분수를 돌아 이어 걷는다)
- *  - dir = -1: 뒤쪽 자리
- *  - dir = 0: 카메라에서 걸어서 더 가까운 자리 (작품 목록·아래 작품 줄·작품 누르기·Home/End)
+ * 작품 i 로 곧장 이동 (작품 목록·아래 작품 줄·작품 누르기·Home/End·'처음으로'). i = -1 은 입구.
+ * 원 위의 같은 작품은 바퀴마다 자리(i + k·n)가 있으니, 지금 카메라에서 걸어서 가장 가까운 자리로 간다
+ * — 마지막 작품에서 첫 작품을 고르면 되감지 않고 분수를 돌아 앞으로 이어 걷는다.
  */
-export function goTo(i: number, dir: -1 | 0 | 1 = 0) {
+export function goTo(i: number) {
   const s = useGallery.getState();
   if (!s.started) useGallery.setState({ started: true });
   const n = s.arts.length;
-  if (i < 0 || !canLoop(n)) {
+  const L = s.layout;
+  if (i < 0 || !canLoop(n) || !L) {
     s.setTarget(i);
     return;
   }
-  const k = i % n;
+  const k = ((i % n) + n) % n;
   const here = s.current;
-  let pick: number;
-  if (dir > 0) pick = k >= here - 1e-3 ? k : k + n;
-  else if (dir < 0) pick = k + n <= here + 1e-3 ? k + n : k;
-  else {
-    const L = s.layout;
-    const far = (c: number) => (L ? Math.abs(L.metresAt(c) - L.metresAt(here)) : Math.abs(c - here));
-    pick = far(k) <= far(k + n) ? k : k + n;
+  const lap = here >= 0 ? Math.floor(here / n) : 0;
+  let best = k;
+  let bestM = Infinity;
+  for (let j = lap - 1; j <= lap + 1; j++) {
+    const c = k + j * n;
+    if (c < 0 || c > maxTarget(n)) continue;
+    const dm = Math.abs(L.metresAt(c) - L.metresAt(here));
+    if (dm < bestM - 1e-6) {
+      best = c;
+      bestM = dm;
+    }
   }
-  s.setTarget(pick);
+  s.setTarget(best);
 }
 
-/** 한 바퀴 돌아 첫 작품 앞에 막 도착한 참인가 (카메라가 마지막 몇 cm를 다가가는 동안 목표 번호는 아직 n) */
-export function arrivedAtFirstAgain(s = useGallery.getState()) {
-  const n = s.arts.length;
-  return canLoop(n) && Math.round(s.target) === n && stopIndex(s.current, n) === 0 && offStop(s.current, s.layout) < 0.22;
-}
-
-/** 한 작품 앞(+1)·뒤(-1)로 (‹ › 버튼·방향키). 마지막 다음은 원을 따라 첫 작품으로 이어진다. */
+/**
+ * 한 작품 앞(+1)·뒤(-1)로 (‹ › 버튼·방향키·크게 보기의 이전/다음). 지금 목표에서 한 칸이라 빠르게 눌러도 어긋나지 않는다.
+ * 원 위에서는 끝이 없다: 마지막 다음은 첫 작품, 첫 작품 이전은 마지막 작품 (분수를 돌아 이어 걷는다).
+ * 진입로를 걸어 들어오는 중(카메라가 아직 원에 닿기 전)에 뒤로 가면 입구 쪽이다.
+ */
 export function step(d: 1 | -1) {
   const s = useGallery.getState();
   if (!s.started) useGallery.setState({ started: true });
-  const n = s.arts.length;
-  let next = Math.round(s.target) + d;
-  // 첫 작품에서 뒤로는 입구 쪽 — 한 바퀴 돌아 막 도착했을 때도 같게
-  if (d < 0 && arrivedAtFirstAgain(s)) next = -1;
-  if (next > maxTarget(n)) next -= n;
-  s.setTarget(next);
+  s.setTarget(Math.round(s.target) + d);
 }
