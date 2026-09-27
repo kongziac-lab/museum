@@ -4,7 +4,7 @@
 
 <img src="docs/title.png" width="49%"> <img src="docs/gallery.png" width="49%">
 
-- **정문**(흰 열주) → 가운데 화단이 있는 **대로** → 헤링본 벽돌 **광장**(화강암 뚜껑 벽돌 화단·다듬은 반송·둥근 향나무·표석·비석) → 창립 120주년 기념 **분수** → **동산도서관** 순서로, 캠퍼스 소개 영상과 광장 사진을 따라 배치했습니다. 먼 언덕 위에 **본관**이, 대로 양옆에 녹색 지붕 건물이 보입니다. 건물 정면은 실제 사진을 입힌 3D 모델입니다.
+- **정문**(흰 열주) → 가운데 화단이 있는 **대로** → 헤링본 벽돌 **광장**(화강암 뚜껑 벽돌 화단·다듬은 반송·둥근 향나무·표석·비석) → 창립 120주년 기념 **분수** → **동산도서관** 순서로 걷습니다. 분수 동쪽에 **전산교육원**, 그 뒤로 **행소관(본관)**, 도서관 뒤 북서쪽 궁산 기슭(광장보다 약 42 m 높은 곳)에 실제 크기의 **아담스채플**, 그 아래 비탈에 **계명한학촌** 두 무리, 서쪽에 **의양관**이 있습니다. 위치는 캠퍼스 안내도와 OpenStreetMap(분수 기준 실제 방위·거리)에 맞췄고, 정문~광장 대로만 짧게 줄였습니다.
 - 작품은 분수를 둘러싼 산책로 안쪽에 **대상 → 최우수상 → 우수상 → 장려상** 순서로 서 있어, 어느 작품을 보든 뒤로 분수와 건물이 보입니다. 부문이 바뀌는 곳에는 표지판이 있습니다.
 - **스크롤·화면 밀기·‹ › 버튼·← → 키** 중 무엇으로든 다음 작품 앞까지 걸어가 멈춥니다. 키를 누르고 있을 필요가 없습니다.
 - 아래 **작품 띠**나 **작품 목록**에서 원하는 작품을 누르면 그 작품 앞으로 바로 걸어갑니다.
@@ -105,13 +105,15 @@ npm run dev
 | `scripts/scenery/gen-trees.mjs` | [ez-tree](https://github.com/dgreenheck/ez-tree)로 나무 8종 모양(OBJ) |
 | `scripts/scenery/prep_facades.py` | 건물 사진의 원근을 바로잡고 하늘을 지운 외벽 텍스처 |
 | `scripts/scenery/gen_textures.py` | 헤링본 포장·화단 벽돌·화강암·아스팔트·회양목·먼 산 숲 재질 (광장 사진 색 기준) |
-| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(건물·정문·반송·향나무·표석) |
+| `scripts/scenery/gen_chapel.py` | 아담스채플 외벽 무늬 (측랑·채광층·탑·가운데 박공·돔 드럼) |
+| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(도서관·행소관·아담스채플·전산교육원·한학촌·정문·반송·향나무·표석) |
 
 ```bash
 W=scenery-src   # 작업 폴더 (저장소에 넣지 않음)
 node scripts/scenery/gen-trees.mjs $W/trees
 python3 scripts/scenery/prep_facades.py $W/kmu $W/facades   # $W/kmu 에 건물 사진 (출처: public/credits.html)
 python3 scripts/scenery/gen_textures.py public/scenery/tex
+python3 scripts/scenery/gen_chapel.py $W/facades
 /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
   --python scripts/scenery/build_scenery.py -- --work $W --out public/scenery
 ```

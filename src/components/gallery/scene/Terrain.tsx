@@ -62,14 +62,18 @@ export function Terrain({ plan }: { plan: SitePlan }) {
     }
     cMap.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.MeshStandardMaterial({ ...grass, roughness: 1, normalScale: new THREE.Vector2(0.9, 0.9) });
+    // 산 중턱 건물 터(채플·한학촌)는 숲 대신 잔디 (최대 4곳)
+    const pads = plan.pads.slice(0, 4).map((p) => new THREE.Vector4(p.x, p.z, p.r, 1));
+    while (pads.length < 4) pads.push(new THREE.Vector4(0, 0, 0, 0));
     m.onBeforeCompile = (shader) => {
       shader.uniforms.uCanopy = { value: cMap };
       shader.uniforms.uCanopyN = { value: cNrm };
+      shader.uniforms.uPads = { value: pads };
       shader.vertexShader = shader.vertexShader
         .replace("#include <common>", "#include <common>\nvarying vec3 vWorldPos;")
         .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
       shader.fragmentShader = shader.fragmentShader
-        .replace("#include <common>", "#include <common>\nvarying vec3 vWorldPos;\nuniform sampler2D uCanopy;\nuniform sampler2D uCanopyN;")
+        .replace("#include <common>", "#include <common>\nvarying vec3 vWorldPos;\nuniform sampler2D uCanopy;\nuniform sampler2D uCanopyN;\nuniform vec4 uPads[4];")
         .replace(
           "#include <map_fragment>",
           `
@@ -81,13 +85,16 @@ export function Terrain({ plan }: { plan: SitePlan }) {
           vec4 canC = texture2D(uCanopy, cuv) * 0.6 + texture2D(uCanopy, cuv * 0.31 + 0.17) * 0.4;
           // 숲: 언덕 높이 또는 먼 거리
           float forest = max(smoothstep(1.5, 7.0, vWorldPos.y), smoothstep(210.0, 260.0, length(vWorldPos.xz)));
+          for (int i = 0; i < 4; i++) {
+            if (uPads[i].w > 0.5) forest *= smoothstep(uPads[i].z + 4.0, uPads[i].z + 28.0, distance(vWorldPos.xz, uPads[i].xy));
+          }
           vec4 sampledDiffuseColor = mix(grassC, canC, forest);
           diffuseColor *= sampledDiffuseColor;
           `
         );
     };
     return m;
-  }, [grassSet, canopySet]);
+  }, [grassSet, canopySet, plan]);
 
   return <mesh geometry={geometry} material={material} receiveShadow />;
 }

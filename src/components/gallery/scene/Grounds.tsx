@@ -201,8 +201,8 @@ export function Site({ plan, mats }: { plan: SitePlan; mats: SiteMaterials }) {
     // 대로: 차도(아스팔트) · 가운데 보행로와 화단 · 보도
     const z0 = plazaS;
     asphalt.push(rect(medianX, roadX, z0, roadS, 0.012), rect(-roadX, -medianX, z0, roadS, 0.012));
-    // 광장 남쪽 끝을 가로지르는 길 (회전 교차로 대신)
-    asphalt.push(rect(-(walkX + 30), walkX + 30, z0, z0 + 12, 0.011));
+    // 광장 남쪽 끝을 가로지르는 길 (회전 교차로 대신) — 양옆 동천관·바우어관 앞에서 끝난다
+    asphalt.push(rect(-(walkX + 21), walkX + 21, z0, z0 + 12, 0.011));
     brick.push(rect(-1.6, 1.6, z0 + 12, roadS, 0.013));
     grass.push(rect(1.6, medianX, z0 + 12, roadS, 0.014), rect(-medianX, -1.6, z0 + 12, roadS, 0.014));
     for (const s of [-1, 1]) {

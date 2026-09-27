@@ -22,7 +22,7 @@ import sys
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 argv = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 opts = dict(zip(argv[::2], argv[1::2]))
@@ -462,6 +462,7 @@ def bark_material(kind):
     t.image = load_image(f"{d}/{kind}_roughness_1k.jpg", True)
     nt.links.new(nt.nodes["UV Map"].outputs["UV"], t.inputs["Vector"])
     nt.links.new(t.outputs["Color"], nt.nodes["Principled BSDF"].inputs["Roughness"])
+    m.use_backface_culling = True  # 닫힌 줄기: 뒷면은 그리지 않는다
     return m
 
 
@@ -506,12 +507,16 @@ def build_trees():
                 ob.data.materials.append(bark_material(info["bark"]["type"]))
             else:
                 ob.data.materials.append(leaf_material(info["leaves"]["type"]))
-        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+        # OBJ(Y 위) → Blender(Z 위) 회전까지 메시에 굽는다: 웹에서 인스턴싱하면 노드 회전이 빠진다
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
         for ob in imported:
             ob.data.uv_layers[0].name = "UVMap"
             if ob.name.endswith("_bark"):
                 for p in ob.data.polygons:
                     p.use_smooth = True
+                # 껍질은 잎에 거의 가려진다 → 삼각형을 크게 줄인다 (관목은 더)
+                dec = ob.modifiers.new("decimate", "DECIMATE")
+                dec.ratio = 0.12 if name.startswith("bush") else 0.3
             else:
                 leaf_normals(ob)
             ob.location.x = i * 20  # 미리보기용으로 늘어놓기 (웹에서는 원점 기준으로 다시 둔다)
@@ -541,6 +546,26 @@ def leaf_normals(ob):
 
 
 # ───────────────────────── 내보내기 ─────────────────────────
+
+
+def join_by_material(root):
+    """한 건물(빈 물체) 아래 조각 메시를 재질별로 합친다 → 웹에서 그리기 호출이 줄어든다.
+    사진 면(photo_ 이름)은 따로 모으고, 자식이 있는 메시와 빈 물체(gate_text 등)는 그대로 둔다."""
+    groups = {}
+    for o in root.children:
+        if o.type != "MESH" or o.children:
+            continue
+        key = (o.name.startswith("photo_"), tuple(m.name if m else "" for m in o.data.materials))
+        groups.setdefault(key, []).append(o)
+    for (is_photo, mats), objs in groups.items():
+        if len(objs) < 2:
+            continue
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in objs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = objs[0]
+        bpy.ops.object.join()
+        objs[0].name = f"{'photo_' if is_photo else ''}{root.name}_{mats[0] if mats else 'mesh'}"
 
 
 def export(path, objs):
@@ -652,6 +677,37 @@ def gable_roof(name, x0, x1, y0, y1, z0, ridge, mat, parent, along="y"):
     return ob
 
 
+def hip_roof(name, x0, x1, y0, y1, z0, z1, mat, parent, overhang=0.6):
+    """모임지붕 (네 면이 모두 경사, 긴 쪽으로 용마루)."""
+    x0, x1, y0, y1 = x0 - overhang, x1 + overhang, y0 - overhang, y1 + overhang
+    w, d = x1 - x0, y1 - y0
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    if w >= d:
+        i = d / 2
+        pts = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0 + i, (y0 + y1) / 2, z1), (x1 - i, (y0 + y1) / 2, z1)]
+        faces = [(0, 1, 5, 4), (2, 3, 4, 5), (1, 2, 5), (3, 0, 4)]
+    else:
+        i = w / 2
+        pts = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), ((x0 + x1) / 2, y0 + i, z1), ((x0 + x1) / 2, y1 - i, z1)]
+        faces = [(0, 1, 4), (1, 2, 5, 4), (2, 3, 5), (3, 0, 4, 5)]
+    v = [bm.verts.new(p) for p in pts]
+    for f in faces:
+        bm.faces.new([v[k] for k in f])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    uvl = bm.loops.layers.uv.new("UVMap")
+    for f in bm.faces:
+        for lp in f.loops:
+            lp[uvl].uv = (lp.vert.co.x / 3, (lp.vert.co.y + lp.vert.co.z) / 3)
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(mat)
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(ob)
+    ob.parent = parent
+    return ob
+
+
 def photo_material(name, path, alpha=False):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
@@ -666,6 +722,13 @@ def photo_material(name, path, alpha=False):
         nt.links.new(t.outputs["Alpha"], rnd.inputs[0])
         nt.links.new(rnd.outputs[0], bsdf.inputs["Alpha"])
     bsdf.inputs["Roughness"].default_value = 0.9
+    return m
+
+
+def lit_material(name, path, alpha=False):
+    """그린 외벽 무늬 — 장면 빛을 받는 재질 (photo_ 가 아니므로 웹에서 조명 계산)."""
+    m = photo_material(name, path, alpha)
+    m.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.85
     return m
 
 
@@ -793,6 +856,277 @@ def build_campus():
         box_walls(f"photo_main_wing{sx:+d}", x0, x1, 0.05, 14, 0, 10.5, wing, mn, tile=(1.38, 8.4), front=False)
         gable_roof(f"main_roof{sx:+d}", x0 - 0.2, x1 + 0.2, -0.4, 14.4, 10.5, 13.0, roof_blue, mn, along="x")
 
+    # ── 아담스채플관 (궁산 기슭, 1999) — 실측 m. 교차 검증한 명세(OSM 윤곽 75 × 25 m, 사진 비례)를 따른다.
+    # 원점 = 가운데 박공 아래 남쪽 측랑 벽 선, 남쪽 지면(G0). X: 서쪽 끝 −35 … 동쪽 꼬리 43.5 (+X = 동북동).
+    # 정면(남남동)은 Blender −Y. 높이: 측랑 처마 12.5, 본당 처마 17, 용마루 20, 가운데 박공 21.5, 탑 23, 돔 꼭대기 31.9.
+    ad = building("bld_adams")
+    a_aisle = lit_material("adams_aisle", f"{F}/adams_aisle.jpg")
+    a_clere = lit_material("adams_clerestory", f"{F}/adams_clerestory.jpg")
+    a_tower = lit_material("adams_tower", f"{F}/adams_tower.jpg")
+    a_front = lit_material("adams_front", f"{F}/adams_front.png", alpha=True)
+    a_drum = lit_material("adams_drum", f"{F}/adams_drum.jpg")
+    a_brick = lit_material("adams_brick", f"{F}/adams_brick.jpg")
+    roof_gg = plain_material("roof_greygreen", (0.11, 0.18, 0.15), rough=0.55, metal=0.2)
+    roof_dk = plain_material("roof_charcoal", (0.045, 0.05, 0.05), rough=0.6)
+    bronze = plain_material("dome_bronze", (0.058, 0.043, 0.033), rough=0.5, metal=0.3)
+    paving = plain_material("terrace_paving", (0.6, 0.58, 0.53), rough=0.9)
+    white = plain_material("stone_trim", (0.77, 0.75, 0.69), rough=0.6)
+
+    def cone(name, x, y, z, r, h, seg=4, mat=None):
+        me = bpy.data.meshes.new(name)
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=True, segments=seg, radius1=r, radius2=0.0, depth=h)
+        if seg == 4:
+            bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(math.pi / 4, 3, "Z"))
+        for v in bm.verts:
+            v.co += Vector((x, y, z + h / 2))
+        bm.to_mesh(me)
+        bm.free()
+        ob = bpy.data.objects.new(name, me)
+        ob.data.materials.append(mat or white)
+        bpy.context.collection.objects.link(ob)
+        ob.parent = ad
+
+    def lean_to(name, x0, x1, y_low, y_high, z_low, z_high, mat):
+        """측랑 홑지붕 (y_low 쪽 처마 z_low → y_high 쪽 z_high)."""
+        me = bpy.data.meshes.new(name)
+        bm = bmesh.new()
+        v = [bm.verts.new(p) for p in [(x0, y_low, z_low), (x1, y_low, z_low), (x1, y_high, z_high), (x0, y_high, z_high)]]
+        bm.faces.new(v)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        if bm.faces[0].normal.z < 0:
+            bm.faces[0].normal_flip()
+        bm.to_mesh(me)
+        bm.free()
+        ob = bpy.data.objects.new(name, me)
+        ob.data.materials.append(mat)
+        bpy.context.collection.objects.link(ob)
+        ob.parent = ad
+
+    def hall(name, x0, x1):
+        """측랑(남·북) + 채광층 + 본당 지붕 한 구간."""
+        wall(f"{name}_south", (x0, 0), (x1, 0), 0, 12.5, a_aisle, ad, tile=(5.0, 12.5))
+        wall(f"{name}_north", (x1, 24), (x0, 24), 0, 12.5, a_aisle, ad, tile=(5.0, 12.5))
+        wall(f"{name}_clere_s", (x0, 5), (x1, 5), 12.5, 17, a_clere, ad, tile=(5.0, 4.5), vr=(0, 1))
+        wall(f"{name}_clere_n", (x1, 19), (x0, 19), 12.5, 17, a_clere, ad, tile=(5.0, 4.5), vr=(0, 1))
+        lean_to(f"{name}_aisle_s", x0, x1, -0.5, 5, 12.4, 13.3, roof_dk)
+        lean_to(f"{name}_aisle_n", x0, x1, 24.5, 19, 12.4, 13.3, roof_dk)
+        gable_roof(f"{name}_nave", x0, x1, 4.6, 19.4, 17, 20, roof_gg, ad, along="x")
+        # 흰 버팀 기둥 머리 (측랑 처마 위로 1.8 m, 칸마다)
+        k = 0
+        x = x0
+        while x <= x1 + 0.01:
+            cone(f"{name}_pin{k}", x + 0.4, -0.25, 12.5, 0.55, 1.8)
+            x += 5.0
+            k += 1
+
+    def tower(name, x0, x1, y0=-0.5, y1=6.0, h=20.0, peak=23.0):
+        box_walls(name, x0, x1, y0, y1, 0, h, a_tower, ad, tile=(x1 - x0, 20.0))
+        gable_roof(f"{name}_cap", x0 - 0.3, x1 + 0.3, y0 - 0.3, y1 + 0.3, h, peak, roof_dk, ad, along="y")
+        xm = (x0 + x1) / 2
+        for yy, nm in ((y0 - 0.32, "s"), (y1 + 0.32, "n")):  # 남·북 박공 삼각형 (벽돌) + 흰 박공 테두리
+            tri = bpy.data.meshes.new(f"{name}_gable_{nm}")
+            bm = bmesh.new()
+            vs = [bm.verts.new(p) for p in [(x0, yy, h), (x1, yy, h), (xm, yy, peak - 0.1)]]
+            f = bm.faces.new(vs if nm == "s" else list(reversed(vs)))
+            uvl = bm.loops.layers.uv.new("UVMap")
+            for lp in f.loops:
+                lp[uvl].uv = (lp.vert.co.x / 4, lp.vert.co.z / 4)
+            bm.normal_update()
+            bm.to_mesh(tri)
+            bm.free()
+            ob = bpy.data.objects.new(f"{name}_gable_{nm}", tri)
+            ob.data.materials.append(a_brick)
+            bpy.context.collection.objects.link(ob)
+            ob.parent = ad
+            for sgn in (-1, 1):
+                e = bpy.data.meshes.new(f"{name}_rake_{nm}{sgn:+d}")
+                bm = bmesh.new()
+                bmesh.ops.create_cube(bm, size=1.0)
+                L = math.hypot((x1 - x0) / 2, peak - h) + 0.3
+                for v in bm.verts:
+                    v.co.x *= L
+                    v.co.y *= 0.4
+                    v.co.z *= 0.35
+                ang = math.atan2(peak - h, (x1 - x0) / 2) * sgn
+                bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(ang, 3, "Y"))
+                for v in bm.verts:
+                    v.co += Vector((xm + sgn * (x1 - x0) / 4, yy + (-0.08 if nm == "s" else 0.08), h + (peak - h) / 2))
+                bm.to_mesh(e)
+                bm.free()
+                ob = bpy.data.objects.new(f"{name}_rake_{nm}{sgn:+d}", e)
+                ob.data.materials.append(white)
+                bpy.context.collection.objects.link(ob)
+                ob.parent = ad
+
+    # 서쪽 탑 + 탑 뒤 덩어리, 서쪽 본당
+    tower("adams_tower_w", -35.0, -28.5)
+    box_walls("adams_back_w", -35.0, -28.5, 6.0, 24.0, 0, 16.0, a_brick, ad, tile=(4, 4), front=False)
+    gable_roof("adams_back_w_roof", -35.3, -28.2, 6.0, 24.3, 16.0, 19.0, roof_dk, ad, along="y")
+    hall("adams_hall_w", -28.5, -5.5)
+    hall("adams_hall_e", 5.5, 25.5)
+    # 가운데: 돌출 박공(폭 11 m, 4 m 앞으로) + 본당을 잇는 몸체
+    quad("adams_front", [(-5.5, -4, 0), (5.5, -4, 0), (5.5, -4, 21.5), (-5.5, -4, 21.5)], [(0, 0), (1, 0), (1, 1), (0, 1)], a_front, ad)
+    wall("adams_front_side_w", (-5.5, 0), (-5.5, -4), 0, 17.5, a_brick, ad, tile=(4, 4))
+    wall("adams_front_side_e", (5.5, -4), (5.5, 0), 0, 17.5, a_brick, ad, tile=(4, 4))
+    box_walls("adams_center", -5.5, 5.5, 0, 24, 0, 17, a_brick, ad, tile=(4, 4), front=False)
+    gable_roof("adams_center_roof", -5.9, 5.9, -4.3, 5.5, 17.5, 21.5, roof_gg, ad, along="y")
+    gable_roof("adams_center_nave", -5.5, 5.5, 4.6, 19.4, 17, 20, roof_gg, ad, along="x")
+    for sx in (-1, 1):  # 박공 양옆 흰 돌 기둥 → 뾰족탑
+        slab(f"adams_pier{sx:+d}", sx * 4.8 - 0.7, sx * 4.8 + 0.7, -4.5, -3.2, 0, 21.0, stone, ad, 0.03)
+        cone(f"adams_pier_pin{sx:+d}", sx * 4.8, -3.85, 21.0, 0.9, 1.6)
+    # 동쪽: 탑 E1 · 낮은 연결부 · 탑 E2 · 뒤 덩어리 · 낮은 꼬리
+    tower("adams_tower_e1", 25.5, 31.5)
+    wall("adams_link_s", (31.5, 0), (34.0, 0), 0, 16.0, a_brick, ad, tile=(4, 4))
+    gable_roof("adams_link_roof", 31.3, 34.2, -0.3, 6.3, 16.0, 18.0, roof_dk, ad, along="y")
+    tower("adams_tower_e2", 34.0, 40.5)
+    box_walls("adams_back_e", 25.5, 40.5, 6.0, 24.0, 0, 16.0, a_brick, ad, tile=(4, 4), front=False)
+    gable_roof("adams_back_e_roof", 25.2, 40.8, 5.7, 24.3, 16.0, 19.0, roof_gg, ad, along="x")
+    box_walls("adams_tail", 40.5, 43.5, 0.0, 14.0, 0, 11.0, a_aisle, ad, tile=(5.0, 12.5), roof_mat=roof_dk)
+    for (x0, x1, y0, y1) in ((40.4, 43.6, -0.1, 0.2), (43.3, 43.6, -0.1, 14.1)):
+        slab("adams_tail_rail", x0, x1, y0, y1, 11.0, 12.0, white, ad)
+
+    # 돔: 벽돌 받침(13 m) + 흰 난간·모서리 뾰족탑 → 흰 드럼(지름 9.5 m, 아치 창 14) → 흰 띠 → 청동빛 돔 → 랜턴 → 피뢰침
+    cyc = 12.0
+    box_walls("adams_dome_base", -6.5, 6.5, cyc - 6.5, cyc + 6.5, 17.0, 22.0, a_brick, ad, tile=(4, 4), roof_mat=paving)
+    for (x0, x1, y0, y1) in ((-6.5, 6.5, cyc - 6.5, cyc - 6.25), (-6.5, 6.5, cyc + 6.25, cyc + 6.5), (-6.5, -6.25, cyc - 6.5, cyc + 6.5), (6.25, 6.5, cyc - 6.5, cyc + 6.5)):
+        slab("adams_balustrade", x0, x1, y0, y1, 22.0, 22.9, white, ad)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            slab(f"adams_dpier{sx:+d}{sy:+d}", sx * 6.5 - 0.6, sx * 6.5 + 0.6, cyc + sy * 6.5 - 0.6, cyc + sy * 6.5 + 0.6, 17.0, 23.5, stone, ad)
+            cone(f"adams_dpin{sx:+d}{sy:+d}", sx * 6.5, cyc + sy * 6.5, 23.5, 0.8, 1.6)
+
+    def ring(name, r, z0, z1, mat, seg=32, tile=None):
+        me = bpy.data.meshes.new(name)
+        bm = bmesh.new()
+        uvl = bm.loops.layers.uv.new("UVMap")
+        bot, top = [], []
+        for k in range(seg + 1):
+            a = k / seg * math.tau
+            bot.append(bm.verts.new((math.cos(a) * r, cyc + math.sin(a) * r, z0)))
+            top.append(bm.verts.new((math.cos(a) * r, cyc + math.sin(a) * r, z1)))
+        circ = math.tau * r
+        for k in range(seg):
+            f = bm.faces.new([bot[k], bot[k + 1], top[k + 1], top[k]])
+            for lp in f.loops:
+                kk = k if lp.vert in (bot[k], top[k]) else k + 1
+                u = (kk / seg) * (circ / tile[0] if tile else 1)
+                v = 0 if lp.vert in bot else (1 if not tile else (z1 - z0) / tile[1])
+                lp[uvl].uv = (u, v)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(me)
+        bm.free()
+        for p in me.polygons:
+            p.use_smooth = True
+        me.materials.append(mat)
+        ob = bpy.data.objects.new(name, me)
+        bpy.context.collection.objects.link(ob)
+        ob.parent = ad
+        return ob
+
+    ring("adams_drum", 4.75, 22.0, 25.5, a_drum, seg=28, tile=(math.tau * 4.75 / 14, 3.5))
+    ring("adams_drum_cornice", 5.05, 25.5, 25.85, white, seg=40)
+    dome = bpy.data.meshes.new("adams_dome")
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=40, v_segments=16, radius=4.75)
+    for v in list(bm.verts):
+        if v.co.z < -0.01:
+            bm.verts.remove(v)
+    for v in bm.verts:
+        a = math.atan2(v.co.y, v.co.x)
+        k = 1 - 0.022 * (1 - abs(math.cos(a * 10)))  # 갈빗대 20개
+        v.co.x *= k
+        v.co.y *= k
+        v.co.z = v.co.z * (6.0 / 4.75) + 25.85
+        v.co.y += cyc
+    bm.to_mesh(dome)
+    bm.free()
+    for p in dome.polygons:
+        p.use_smooth = True
+    ob = bpy.data.objects.new("adams_dome", dome)
+    ob.data.materials.append(bronze)
+    bpy.context.collection.objects.link(ob)
+    ob.parent = ad
+    ring("adams_lantern", 0.75, 31.5, 33.2, bronze, seg=16)
+    cone("adams_lantern_cap", 0, cyc, 33.2, 0.9, 0.7, seg=16, mat=bronze)
+    slab("adams_rod", -0.05, 0.05, cyc - 0.05, cyc + 0.05, 33.9, 36.0, roof_dk, ad)
+
+    # 남쪽 반원 테라스 (반지름 16, 위 5 m) + 흰 난간 + 남쪽 계단
+    me = bpy.data.meshes.new("adams_terrace")
+    bm = bmesh.new()
+    seg = 32
+    rim_b, rim_t = [], []
+    for k in range(seg + 1):
+        a = math.pi + k / seg * math.pi  # y < 0 (정면 쪽) 반원
+        rim_b.append(bm.verts.new((math.cos(a) * 16, math.sin(a) * 16, 0)))
+        rim_t.append(bm.verts.new((math.cos(a) * 16, math.sin(a) * 16, 5)))
+    for k in range(seg):
+        bm.faces.new([rim_b[k], rim_b[k + 1], rim_t[k + 1], rim_t[k]])
+    bm.faces.new(rim_t)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    uvl = bm.loops.layers.uv.new("UVMap")
+    for f in bm.faces:
+        for lp in f.loops:
+            c = lp.vert.co
+            lp[uvl].uv = ((c.x + c.y) / 4, c.z / 4 if abs(f.normal.z) < 0.5 else c.y / 4)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new("adams_terrace", me)
+    ob.data.materials.append(a_brick)
+    ob.data.materials.append(paving)
+    for p in ob.data.polygons:
+        p.material_index = 1 if abs(p.normal.z) > 0.5 else 0
+    bpy.context.collection.objects.link(ob)
+    ob.parent = ad
+    ring_b = bpy.data.meshes.new("adams_terrace_rail")
+    bm = bmesh.new()
+    inner, outer, inner_t, outer_t = [], [], [], []
+    for k in range(seg + 1):
+        a = math.pi + k / seg * math.pi
+        for lst, r, z in ((inner, 15.75, 5), (outer, 16.0, 5), (inner_t, 15.75, 6.1), (outer_t, 16.0, 6.1)):
+            lst.append(bm.verts.new((math.cos(a) * r, math.sin(a) * r, z)))
+    for k in range(seg):
+        if abs(math.cos(math.pi + (k + 0.5) / seg * math.pi)) < 0.14:
+            continue  # 계단 자리 비움
+        bm.faces.new([outer[k], outer[k + 1], outer_t[k + 1], outer_t[k]])
+        bm.faces.new([inner[k + 1], inner[k], inner_t[k], inner_t[k + 1]])
+        bm.faces.new([outer_t[k], outer_t[k + 1], inner_t[k + 1], inner_t[k]])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(ring_b)
+    bm.free()
+    ob = bpy.data.objects.new("adams_terrace_rail", ring_b)
+    ob.data.materials.append(white)
+    bpy.context.collection.objects.link(ob)
+    ob.parent = ad
+    for i in range(10):  # 계단 (너비 4.5 m, 반원 앞에서 아래로)
+        slab(f"adams_step{i}", -2.25, 2.25, -16 - (i + 1) * 0.8, -16 - i * 0.8, 0, 5 - i * 0.5, paving, ad)
+
+    # ── 전산교육원(정보전산원) — 광장 동쪽 가장자리, 약 28 × 30 m 3층 붉은 벽돌 + 주황 기와 모임지붕 ──
+    ed = building("bld_edu")
+    ed_floors = photo_material("photo_edu_floors", f"{F}/main_floors.jpg")
+    roof_terra = plain_material("roof_terracotta", (0.42, 0.13, 0.06), rough=0.7)
+    box_walls("photo_edu", -14, 14, 0, 30, 0, 9.56, ed_floors, ed, tile=(1.38, 6.37))  # 3층 (창 두 층 무늬 1.5장)
+    hip_roof("edu_roof", -14, 14, 0, 30, 9.56, 14.5, roof_terra, ed, overhang=0.9)
+
+    # ── 계명한학촌 (도서관과 채플 사이 비탈) — 돌 기단 + 흰 벽·나무 기둥 + 짙은 기와 모임지붕 한옥 세 채 ──
+    hk = building("bld_hanok")
+    plaster = plain_material("hanok_wall", (0.78, 0.74, 0.66), rough=0.9)
+    timber = plain_material("hanok_timber", (0.22, 0.12, 0.06), rough=0.8)
+    giwa = plain_material("roof_giwa", (0.055, 0.06, 0.07), rough=0.6)
+    for k, (cx, cy, w, d, rot) in enumerate([(0, 0, 17, 8, 0), (-12, 10, 12, 6.5, math.pi / 2), (12, 10, 12, 6.5, math.pi / 2)]):
+        e = bpy.data.objects.new(f"hanok_{k}", None)
+        bpy.context.collection.objects.link(e)
+        e.parent = hk
+        e.location = (cx, cy, 0)
+        e.rotation_euler.z = rot
+        slab(f"hanok_{k}_base", -w / 2 - 1.2, w / 2 + 1.2, -d / 2 - 1.2, d / 2 + 1.2, 0, 0.9, stone, e)
+        box_walls(f"hanok_{k}_wall", -w / 2, w / 2, -d / 2, d / 2, 0.9, 4.2, plaster, e)
+        for x in [(-w / 2) + i * w / 4 for i in range(5)]:
+            for y in (-d / 2 - 0.05, d / 2 + 0.05):
+                slab(f"hanok_{k}_post_{x:.1f}_{y:.1f}", x - 0.15, x + 0.15, y - 0.15, y + 0.15, 0.9, 4.2, timber, e)
+        slab(f"hanok_{k}_beam_f", -w / 2 - 0.1, w / 2 + 0.1, -d / 2 - 0.2, -d / 2 + 0.1, 3.8, 4.3, timber, e)
+        hip_roof(f"hanok_{k}_roof", -w / 2, w / 2, -d / 2, d / 2, 4.2, 7.4, giwa, e, overhang=1.8)
+
     # ── 광장 양옆 건물 (영상 속 녹색 지붕 붉은 벽돌 건물) ──
     roof_green = plain_material("roof_green", (0.22, 0.38, 0.3), rough=0.6)
     lib_tile = bpy.data.materials["photo_library_tile"]
@@ -888,12 +1222,15 @@ def build_campus():
     e = empty("gate_text", (0, -2.52, top + 1.1))
     e.parent = gt
 
+    roots = [o.name for o in bpy.data.objects if o.type == "EMPTY" and o.parent is None and o.name.startswith(("bld_", "prop_"))]
+    for n in roots:
+        join_by_material(bpy.data.objects[n])
     export(os.path.join(OUT, "campus.glb"), [o for o in bpy.data.objects])
     if "--preview" in opts:
         for o in bpy.data.objects:
             if o.parent is None and o.type == "EMPTY" and o.name.startswith("bld_"):
-                pos = {"bld_library": (0, 60, 0), "bld_main": (-70, 150, 15), "bld_side_w": (-45, 20, 0), "bld_side_e": (45, 20, 0), "bld_gate": (0, -20, 0)}
-                rot = {"bld_library": 0, "bld_main": -0.4, "bld_side_w": -math.pi / 2, "bld_side_e": math.pi / 2, "bld_gate": 0}
+                pos = {"bld_library": (0, 60, 0), "bld_main": (80, 40, 0), "bld_adams": (-60, 170, 0), "bld_edu": (45, 50, 0), "bld_hanok": (-50, 90, 0), "bld_side_w": (-45, 20, 0), "bld_side_e": (45, 20, 0), "bld_gate": (0, -20, 0)}
+                rot = {"bld_library": 0, "bld_main": math.pi / 2, "bld_adams": -0.3, "bld_edu": math.pi / 2, "bld_hanok": -0.4, "bld_side_w": -math.pi / 2, "bld_side_e": math.pi / 2, "bld_gate": 0}
                 o.location = pos[o.name]
                 o.rotation_euler.z = rot[o.name]
             elif o.parent is None and o.type == "EMPTY" and o.name.startswith("prop_"):

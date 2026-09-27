@@ -34,6 +34,7 @@ export function Campus({ site }: { site: SitePlan }) {
       const obj = src.clone(true);
       obj.position.set(p.x, p.y ?? 0, p.z);
       obj.rotation.set(0, p.rot, 0);
+      obj.scale.setScalar(p.scale ?? 1);
       obj.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh) return;
@@ -54,7 +55,7 @@ export function Campus({ site }: { site: SitePlan }) {
 
   return (
     <group>
-      {nodes.map((o, i) => (o ? <primitive key={plan[i].node} object={o} /> : null))}
+      {nodes.map((o, i) => (o ? <primitive key={`${plan[i].node}-${i}`} object={o} /> : null))}
       {textAnchor && <GateText anchor={textAnchor} />}
     </group>
   );

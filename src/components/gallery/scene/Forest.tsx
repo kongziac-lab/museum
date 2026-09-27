@@ -5,14 +5,14 @@ import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { SCENERY, rng, type Quality } from "./common";
-import { blockedBySite, type SitePlan } from "./sitePlan";
+import { blockedBySite, groundHeight, type SitePlan } from "./sitePlan";
 
 /**
  * 나무 (ez-tree로 모양을 만들고 Blender에서 다듬은 trees.glb).
  * 종류마다 나무껍질·잎을 인스턴싱해서 백여 그루도 가볍게 그린다.
  */
 
-type Place = { x: number; z: number; rot: number; scale: number; tint: number };
+type Place = { x: number; y: number; z: number; rot: number; scale: number; tint: number };
 
 const BIG = ["oak_a", "oak_b", "ash_a", "aspen_a", "pine_a", "pine_b"] as const;
 const BIG_WEIGHT = [0.17, 0.15, 0.14, 0.06, 0.26, 0.22];
@@ -24,8 +24,9 @@ function placeTrees(plan: SitePlan, quality: Quality) {
   const add = (name: string, p: Place) => (out[name] ??= []).push(p);
   const taken: [number, number, number][] = [];
   const free = (x: number, z: number, d: number) => taken.every(([tx, tz, td]) => Math.hypot(tx - x, tz - z) > Math.max(d, td));
+  // 언덕·건물 터 위에서도 땅에 딱 붙게
   const put = (name: string, x: number, z: number, scale: number, gap = 5) => {
-    add(name, { x, z, rot: r() * 6.28, scale, tint: r() });
+    add(name, { x, y: groundHeight(plan, x, z), z, rot: r() * 6.28, scale, tint: r() });
     taken.push([x, z, gap]);
   };
   const pick = () => {
@@ -61,7 +62,8 @@ function placeTrees(plan: SitePlan, quality: Quality) {
     for (const s of [-1, 1]) {
       if (r() < 0.35) continue;
       const x = s * (plan.plazaX + 1.4 + r() * 1.5);
-      add(r() < 0.6 ? "bush_a" : "bush_b", { x, z, rot: r() * 6.28, scale: 0.8 + r() * 0.5, tint: r() });
+      if (blockedBySite(plan, x, z, 1)) continue;
+      add(r() < 0.6 ? "bush_a" : "bush_b", { x, y: groundHeight(plan, x, z), z, rot: r() * 6.28, scale: 0.8 + r() * 0.5, tint: r() });
     }
   }
   return out;
@@ -119,6 +121,18 @@ function leafMaterial(src: THREE.Material, wind: { value: number }) {
         transformed.x += sin(uWind * 1.3 + ph + transformed.y * 0.35) * k;
         transformed.z += cos(uWind * 1.05 + ph * 1.7 + transformed.x * 0.4) * k * 0.8;`
       );
+    // 멀리 있는 잎: 밉맵에서 알파가 흐려져 잘려 나가므로(줄기만 남음) 밉 단계만큼 알파를 키운다
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <alphatest_fragment>",
+      `#ifdef USE_MAP
+        vec2 texel = vMapUv * vec2(textureSize(map, 0));
+        vec2 ddx = dFdx(texel);
+        vec2 ddy = dFdy(texel);
+        float lod = 0.5 * log2(max(dot(ddx, ddx), dot(ddy, ddy)));
+        diffuseColor.a *= 1.0 + max(lod, 0.0) * 0.25;
+      #endif
+      #include <alphatest_fragment>`
+    );
   };
   m.customProgramCacheKey = () => "leaf-wind";
   return m;
@@ -148,7 +162,7 @@ function TreeKind({
     const up = new THREE.Vector3(0, 1, 0);
     list.forEach((p, i) => {
       q.setFromAxisAngle(up, p.rot);
-      m.compose(new THREE.Vector3(p.x, 0, p.z), q, new THREE.Vector3(p.scale, p.scale, p.scale));
+      m.compose(new THREE.Vector3(p.x, p.y - 0.15, p.z), q, new THREE.Vector3(p.scale, p.scale, p.scale));
       barkRef.current?.setMatrixAt(i, m);
       leafRef.current?.setMatrixAt(i, m);
       // 나무마다 잎 색을 조금씩 다르게

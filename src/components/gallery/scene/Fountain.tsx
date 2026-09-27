@@ -42,6 +42,7 @@ export function Fountain({ quality }: { quality: Quality }) {
             c.color.setScalar(mat.name === "granite_coping" ? 1.05 : 0.92);
             c.roughness = mat.name === "granite_coping" ? 0.5 : 0.7;
             c.roughnessMap = null;
+            c.metalnessMap = null; // ARM 텍스처는 금속도 0이라 쓸모없다 (GPU 메모리만 차지)
             return c;
           });
           if (mats.length === 1) m.material = (m.material as THREE.Material[])[0];

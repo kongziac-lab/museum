@@ -21,34 +21,67 @@ export function Atmosphere({
   radius: number;
   panorama: ExhibitionBackground | null;
 }) {
-  const scene = useThree((s) => s.scene);
   const bg = useTexture(panorama?.src ?? SCENERY.bg[quality]);
-
   const bgRotation = panorama ? 0 : ENV_ROTATION;
-  useLayoutEffect(() => {
-    bg.mapping = THREE.EquirectangularReflectionMapping;
-    bg.colorSpace = THREE.SRGBColorSpace;
-    bg.needsUpdate = true;
-    scene.background = bg;
-    scene.backgroundRotation.set(0, bgRotation, 0);
-    return () => {
-      scene.background = null;
-    };
-  }, [bg, scene, bgRotation]);
 
   return (
     <>
+      <SkyDome map={bg} rotation={bgRotation} />
       {/* 먼 숲 언덕이 하늘빛으로 흐려지게 (가까운 광장에는 거의 안 걸린다) */}
       <fog attach="fog" args={[HAZE, 160, 1500]} />
-      {/* Environment는 불러온 뒤 배경 회전값도 덮어쓰므로 같은 값을 넘긴다 */}
-      <Environment
-        files={SCENERY.hdr}
-        environmentRotation={[0, ENV_ROTATION, 0]}
-        backgroundRotation={[0, bgRotation, 0]}
-        environmentIntensity={0.9}
-      />
+      <Environment files={SCENERY.hdr} environmentRotation={[0, ENV_ROTATION, 0]} environmentIntensity={0.9} />
       <Sun quality={quality} radius={radius} />
     </>
+  );
+}
+
+/**
+ * 하늘 사진(360° 파노라마)을 직접 그린다.
+ * scene.background 에 넣으면 three.js가 세로 크기(2048·3072)의 큐브맵 + 깊이 버퍼 6장으로 바꿔
+ * GPU 메모리를 수백 MB 쓰므로, 원본 한 장을 방향으로 바로 읽는다 (밉맵도 만들지 않는다).
+ */
+function SkyDome({ map, rotation }: { map: THREE.Texture; rotation: number }) {
+  const material = useMemo(() => {
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.generateMipmaps = false;
+    map.minFilter = THREE.LinearFilter;
+    map.wrapS = THREE.RepeatWrapping;
+    map.needsUpdate = true;
+    return new THREE.ShaderMaterial({
+      uniforms: { map: { value: map }, rot: { value: new THREE.Matrix3() } },
+      vertexShader: `
+        varying vec3 vDir;
+        void main() {
+          vDir = position;
+          vec4 p = projectionMatrix * vec4(mat3(viewMatrix) * position, 1.0);
+          gl_Position = p.xyww; // 가장 먼 깊이에
+        }`,
+      fragmentShader: `
+        #include <common>
+        uniform sampler2D map;
+        uniform mat3 rot;
+        varying vec3 vDir;
+        void main() {
+          vec3 d = normalize(rot * vDir);
+          gl_FragColor = texture2D(map, equirectUv(d));
+          #include <colorspace_fragment>
+        }`,
+      side: THREE.BackSide,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+      fog: false,
+    });
+  }, [map]);
+  useLayoutEffect(() => {
+    // scene.backgroundRotation 과 같은 방향 (three.js 배경은 회전의 역을 곱해 읽는다)
+    material.uniforms.rot.value.setFromMatrix4(new THREE.Matrix4().makeRotationY(-rotation));
+  }, [material, rotation]);
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <mesh material={material} renderOrder={-1000} frustumCulled={false}>
+      <sphereGeometry args={[10, 48, 24]} />
+    </mesh>
   );
 }
 
