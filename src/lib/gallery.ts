@@ -414,3 +414,75 @@ export function step(d: 1 | -1) {
   if (!s.started) useGallery.setState({ started: true });
   s.setTarget(Math.round(s.target) + d);
 }
+
+/**
+ * 크게 보기에서 이전·다음 작품. 카메라 목표도 한 칸 옮겨 닫으면 그 작품 앞에 서 있게 한다
+ * (원을 따라 끝없이: 마지막 다음은 첫 작품, 첫 작품 이전은 마지막 작품).
+ */
+export function moveDetail(d: 1 | -1) {
+  const s = useGallery.getState();
+  if (s.detail === null) return;
+  const n = s.arts.length;
+  if (!canLoop(n)) {
+    const next = s.detail + d;
+    if (next < 0 || next >= n) return;
+    s.openDetail(next);
+    goTo(next);
+    return;
+  }
+  // 보고 있는 작품의, 지금 목표에서 가장 가까운 바퀴 자리에서 한 칸 (빠르게 눌러도 목표 기준이라 어긋나지 않는다)
+  const base = Math.round(s.target);
+  let here = s.detail + Math.round((base - s.detail) / n) * n;
+  if (here < 0) here = s.detail;
+  let next = here + d;
+  if (next < 0) next = n - 1; // 진입로에서 첫 작품 이전 → 마지막 작품
+  s.setTarget(next);
+  s.openDetail(stopIndex(next, n));
+}
+
+/*
+ * 크게 보기와 브라우저 '뒤로': 열 때 기록을 하나 쌓아 두면 휴대폰의 뒤로 버튼·밀기(카카오톡 ‹ 포함)가
+ * 사이트를 떠나지 않고 크게 보기만 닫는다. ✕·Esc·아래로 밀기도 그 기록을 되돌려 닫아 기록이 쌓이지 않게 한다.
+ * (Next.js 는 직접 쌓은 기록에도 자기 표시(__NA)를 복사해 두므로 뒤로 가도 새로고침하지 않는다.)
+ */
+let viewerPushed = false;
+let closeToken = 0;
+
+/** 크게 보기 열기 (누른 그 순간에 불러야 브라우저가 기록을 받아 준다) */
+export function openViewer(i: number) {
+  const s = useGallery.getState();
+  if (s.detail === null && typeof window !== "undefined") {
+    try {
+      window.history.pushState({ museumViewer: 1 }, "");
+      viewerPushed = true;
+    } catch {
+      viewerPushed = false;
+    }
+  }
+  s.openDetail(i);
+}
+
+/** 크게 보기 닫기 */
+export function closeViewer() {
+  const s = useGallery.getState();
+  if (s.detail === null) return;
+  if (viewerPushed && typeof window !== "undefined" && window.history.state?.museumViewer) {
+    viewerPushed = false;
+    const token = ++closeToken;
+    window.history.back();
+    // 뒤로가 오지 않으면(드물게) 그냥 닫는다
+    setTimeout(() => {
+      if (token === closeToken && useGallery.getState().detail !== null) useGallery.getState().openDetail(null);
+    }, 350);
+    return;
+  }
+  viewerPushed = false;
+  s.openDetail(null);
+}
+
+/** 브라우저 뒤로(popstate) — 크게 보기가 열려 있으면 닫는다 */
+export function viewerPopped() {
+  viewerPushed = false;
+  closeToken++;
+  if (useGallery.getState().detail !== null) useGallery.getState().openDetail(null);
+}

@@ -5,7 +5,7 @@ import { type ThreeEvent } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
-import { WALK, goTo, offStop, stopIndex, useGallery, type GalleryLayout, type Stop } from "@/lib/gallery";
+import { WALK, goTo, offStop, openViewer, stopIndex, useGallery, type GalleryLayout, type Stop } from "@/lib/gallery";
 import { FONT, SCENERY, fitText, useCanvasTexture, useLazyTexture } from "./common";
 import { useTexture } from "@react-three/drei";
 import type { SitePlan } from "./sitePlan";
@@ -59,7 +59,7 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
     if (e.delta > 8) return; // 드래그는 무시
     const st = useGallery.getState();
     // 이 작품 앞에 서 있으면 크게 보기, 아니면 그 앞으로 걸어간다
-    if (stopIndex(st.current, st.arts.length) === stop.index && offStop(st.current, st.layout) < 0.15) st.openDetail(stop.index);
+    if (stopIndex(st.current, st.arts.length) === stop.index && offStop(st.current, st.layout) < 0.15) openViewer(stop.index);
     else goTo(stop.index);
   };
 

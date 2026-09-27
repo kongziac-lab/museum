@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
-import { buildLayout, canLoop, goTo, offStop, step, stopIndex, useGallery, type GalleryLayout } from "@/lib/gallery";
+import { buildLayout, canLoop, closeViewer, goTo, moveDetail, offStop, openViewer, step, stopIndex, useGallery, viewerPopped, type GalleryLayout } from "@/lib/gallery";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
+import { ArtViewer } from "./ArtViewer";
 import { GalleryScene } from "./GalleryScene";
 import { detectQuality, type Quality } from "./scene/common";
 
@@ -36,31 +37,6 @@ function snap(direction: number) {
   if (direction > 0 && t - Math.floor(t) > 0.12) next = Math.ceil(t);
   if (direction < 0 && Math.ceil(t) - t > 0.12) next = Math.floor(t);
   s.setTarget(next);
-}
-
-/**
- * 크게 보기에서 이전·다음 작품. 카메라 목표도 한 칸 옮겨 닫으면 그 작품 앞에 서 있게 한다
- * (원을 따라 끝없이: 마지막 다음은 첫 작품, 첫 작품 이전은 마지막 작품).
- */
-function moveDetail(d: 1 | -1) {
-  const s = useGallery.getState();
-  if (s.detail === null) return;
-  const n = s.arts.length;
-  if (!canLoop(n)) {
-    const next = s.detail + d;
-    if (next < 0 || next >= n) return;
-    s.openDetail(next);
-    goTo(next);
-    return;
-  }
-  // 보고 있는 작품의, 지금 목표에서 가장 가까운 바퀴 자리에서 한 칸 (빠르게 눌러도 목표 기준이라 어긋나지 않는다)
-  const base = Math.round(s.target);
-  let here = s.detail + Math.round((base - s.detail) / n) * n;
-  if (here < 0) here = s.detail;
-  let next = here + d;
-  if (next < 0) next = n - 1; // 진입로에서 첫 작품 이전 → 마지막 작품
-  s.setTarget(next);
-  s.openDetail(stopIndex(next, n));
 }
 
 function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
@@ -115,7 +91,7 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
     const onKey = (e: KeyboardEvent) => {
       const s = useGallery.getState();
       if (e.key === "Escape") {
-        if (s.detail !== null) s.openDetail(null);
+        if (s.detail !== null) closeViewer();
         else if (s.listOpen) s.toggleList(false);
         return;
       }
@@ -138,7 +114,7 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
       }
       if (forward) step(1);
       else if (back) step(-1);
-      else if (e.key === "Enter" && idx >= 0) s.openDetail(stopIndex(idx, s.arts.length));
+      else if (e.key === "Enter" && idx >= 0) openViewer(stopIndex(idx, s.arts.length));
       else if (e.key === "Home") goTo(0);
       else if (e.key === "End") goTo(s.arts.length - 1);
       else return;
@@ -247,7 +223,6 @@ function Caption({ layout }: { layout: GalleryLayout | null }) {
   const arts = useGallery((s) => s.arts);
   const current = useGallery((s) => s.current);
   const started = useGallery((s) => s.started);
-  const openDetail = useGallery((s) => s.openDetail);
   const idx = stopIndex(current, arts.length);
   const art = arts[idx];
   const show = started && art && offStop(current, layout) < 0.22;
@@ -286,7 +261,7 @@ function Caption({ layout }: { layout: GalleryLayout | null }) {
             </p>
           )}
           <button
-            onClick={() => openDetail(idx)}
+            onClick={() => openViewer(idx)}
             className="mt-3 w-full rounded-xl bg-stone-900 py-2 text-sm font-bold text-white transition hover:bg-stone-700 active:scale-[0.98]"
           >
             크게 보기
@@ -328,7 +303,7 @@ function Filmstrip() {
   );
 }
 
-function Hud({ layout }: { layout: GalleryLayout | null }) {
+function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }) {
   const started = useGallery((s) => s.started);
   const info = useGallery((s) => s.info);
   const arts = useGallery((s) => s.arts);
@@ -352,7 +327,7 @@ function Hud({ layout }: { layout: GalleryLayout | null }) {
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   if (!started) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-3 md:p-5">
+    <div inert={inert} className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-3 md:p-5">
       {/* 위 */}
       <div className="flex items-start justify-between gap-2">
         <button
@@ -480,74 +455,6 @@ function ListOverlay() {
   );
 }
 
-function Detail() {
-  const detail = useGallery((s) => s.detail);
-  const arts = useGallery((s) => s.arts);
-  const openDetail = useGallery((s) => s.openDetail);
-  const art = detail !== null ? arts[detail] : null;
-
-  const lastArt = detail !== null && detail === arts.length - 1;
-
-  return (
-    <AnimatePresence>
-      {art && detail !== null && (
-        <motion.div
-          key="detail"
-          className="absolute inset-0 z-50 flex flex-col bg-black/85 backdrop-blur-sm md:flex-row"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={() => openDetail(null)}
-        >
-          <div className="relative flex min-h-0 flex-1 items-center justify-center p-4 md:p-10">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <motion.img
-              key={art.src}
-              src={art.src}
-              alt={art.name}
-              className="max-h-full max-w-full rounded-md object-contain shadow-2xl"
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-          <div
-            className="w-full shrink-0 bg-white p-5 text-stone-800 md:flex md:h-full md:w-80 md:flex-col md:justify-center md:p-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <AwardChip award={art.award} />
-            <h2 className="mt-3 font-display text-3xl font-bold">{art.name || art.title}</h2>
-            {art.nationality && <p className="mt-1 text-stone-500">{art.nationality}</p>}
-            {art.description && <p className="mt-4 whitespace-pre-line leading-relaxed text-stone-700">{art.description}</p>}
-            <div className="mt-6 flex items-center gap-2">
-              <button
-                onClick={() => moveDetail(-1)}
-                disabled={!canLoop(arts.length) && detail <= 0}
-                className="flex-1 rounded-xl bg-stone-100 py-2.5 font-bold disabled:opacity-40"
-              >
-                {detail === 0 && canLoop(arts.length) ? "‹ 마지막으로" : "‹ 이전"}
-              </button>
-              <button
-                onClick={() => moveDetail(1)}
-                disabled={!canLoop(arts.length) && detail >= arts.length - 1}
-                className="flex-1 rounded-xl bg-stone-100 py-2.5 font-bold disabled:opacity-40"
-              >
-                {lastArt ? "처음으로 ›" : "다음 ›"}
-              </button>
-            </div>
-            <button onClick={() => openDetail(null)} className="mt-2 w-full rounded-xl bg-stone-900 py-2.5 font-bold text-white">
-              닫기
-            </button>
-            <p className="mt-3 text-center text-xs tabular-nums text-stone-400">
-              {detail + 1} / {arts.length}
-            </p>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
 /* ───────────────────────── 전체 ───────────────────────── */
 
 function usePortrait() {
@@ -561,10 +468,42 @@ function usePortrait() {
   return portrait;
 }
 
+/** 크게 보기가 열려 있는 동안 3D 는 초당 10번만 그린다 (카메라는 계속 옮긴 작품 쪽으로 걸어간다) */
+function SlowWhileViewing({ open }: { open: boolean }) {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setInterval(() => invalidate(), 100);
+    return () => window.clearInterval(id);
+  }, [open, invalidate]);
+  return null;
+}
+
+/** 휴대폰 '뒤로'가 사이트를 떠나지 않고 크게 보기만 닫게 */
+function useViewerHistory() {
+  useEffect(() => {
+    // 새로고침 전에 쌓였던 크게 보기 기록은 지운다
+    if (window.history.state?.museumViewer) {
+      const rest = { ...window.history.state };
+      delete rest.museumViewer;
+      window.history.replaceState(rest, "");
+    }
+    const onPop = () => viewerPopped();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+}
+
 export function OpenGallery() {
   useExhibition();
+  useViewerHistory();
   const arts = useGallery((s) => s.arts);
-  const portrait = usePortrait();
+  const open = useGallery((s) => s.detail !== null);
+  const livePortrait = usePortrait();
+  // 크게 보기 중에 휴대폰을 돌려도 뒤의 3D 배치는 다시 만들지 않는다 (닫을 때 반영)
+  const frozen = useRef(livePortrait);
+  if (!open) frozen.current = livePortrait;
+  const portrait = frozen.current;
   const layout = useMemo(() => (arts.length ? buildLayout(arts, { portrait }) : null), [arts, portrait]);
   useEffect(() => {
     useGallery.setState({ layout });
@@ -578,6 +517,8 @@ export function OpenGallery() {
   return (
     <div ref={rootRef} id="museum-root" className="bg-[#c9d3d6]">
       <Canvas
+        frameloop={open ? "demand" : "always"}
+        inert={open}
         shadows={{ type: THREE.PCFSoftShadowMap }}
         dpr={[1, 1.5]}
         // PC는 후처리(Effects)에서 톤 매핑을 하므로 렌더러는 그대로 둔다
@@ -589,11 +530,12 @@ export function OpenGallery() {
         camera={{ fov: portrait ? 64 : 55, near: 0.1, far: 1500, position: [0, 1.62, 40] }}
       >
         {layout && <GalleryScene layout={layout} quality={quality} />}
+        <SlowWhileViewing open={open} />
       </Canvas>
       <Intro />
-      <Hud layout={layout} />
+      <Hud layout={layout} inert={open} />
       <ListOverlay />
-      <Detail />
+      <ArtViewer />
     </div>
   );
 }
