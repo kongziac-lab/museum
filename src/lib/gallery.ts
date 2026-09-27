@@ -5,6 +5,8 @@
  * 작품은 길 안쪽(분수 쪽) 잔디에 서서, 어느 작품을 보든 뒤로 분수가 보인다.
  * 관람객(카메라)은 분수를 왼쪽에 두고 길을 따라 걸으며 작품 앞에 한 점씩 멈춘다.
  * 위치는 연속값 t 하나로 표현한다: t = -1 입구, t = i 는 i번째 작품 앞.
+ * 마지막 작품(n-1) 다음은 원을 따라 계속 걸어 첫 작품으로 이어진다: n-1 < t < n 이 그 고리 구간이고,
+ * t = n 은 한 바퀴 돌아 다시 선 첫 작품이다 (t ≥ n 은 t - n 과 같은 자리, 카메라가 도착하면 되돌려 센다).
  */
 
 import * as THREE from "three";
@@ -30,6 +32,8 @@ export const WALK = {
   eye: 1.62,
   /** 진입로가 원에 닿은 뒤 첫 작품까지 여유 (m) */
   lead: 4,
+  /** 마지막 → 첫 작품 고리 구간을 걷는 가장 빠른 속도 (m/s) — 작품 사이 한 걸음의 처음 속도와 비슷하게 */
+  loopSpeed: 18,
   /** 길 폭 (m) */
   pathWidth: 2.8,
 } as const;
@@ -70,6 +74,47 @@ export interface GalleryLayout {
   pose: (t: number, outPos: THREE.Vector3, outLook: THREE.Vector3) => void;
   /** 호 길이 d → 길 위 점과 접선 */
   at: (d: number) => { p: THREE.Vector3; tan: THREE.Vector3; left: THREE.Vector3 };
+  /** 마지막 → 첫 작품 고리 구간 길이 (m). 작품이 2점보다 적으면 null (이어 돌지 않는다) */
+  loopMetres: number | null;
+  /** t ↔ 입구부터 걸은 거리 (m). 고리 구간을 지나는 이동을 걸음 속도로 맞출 때 쓴다 */
+  metresAt: (t: number) => number;
+  tAtMetres: (m: number) => number;
+}
+
+/** 한 바퀴 돌아 처음으로 이어지는가 (작품 2점 이상) */
+export function canLoop(n: number) {
+  return n >= 2;
+}
+
+/** 목표 위치 t 의 끝: 이어 돌 수 있으면 한 바퀴 더(첫 작품 = n … 마지막 = 2n-1)까지 */
+export function maxTarget(n: number) {
+  return canLoop(n) ? 2 * n - 1 : Math.max(n - 1, 0);
+}
+
+/** 위치 t → 가장 가까운 작품 번호 (-1 = 입구). 고리 구간 끝·한 바퀴 넘은 자리는 처음부터 다시 센다. */
+export function stopIndex(t: number, n: number) {
+  const i = Math.round(t);
+  return n > 0 && i >= n ? i % n : i;
+}
+
+/**
+ * 위치 t 가 가장 가까운 작품 자리에서 얼마나 떨어졌는지 (작품 사이 한 걸음 = 1).
+ * 고리 구간(마지막 → 첫 작품)은 한 단위가 수십 m라서 걸은 거리로 잰다 — 설명 카드·표시등이 한 걸음 거리에서 꺼지게.
+ */
+export function offStop(t: number, layout: GalleryLayout | null) {
+  const d = Math.abs(t - Math.round(t));
+  if (!layout?.loopMetres || t < 0) return d;
+  const n = layout.stops.length;
+  const u = t % n;
+  if (u <= n - 1) return d;
+  return (Math.min(u - (n - 1), n - u) * layout.loopMetres) / WALK.spacing;
+}
+
+/** 위치 t 에서 작품 i 까지 몇 작품 거리인지 (원을 따라 이어지는 쪽도 센다) */
+export function stopDistance(t: number, i: number, n: number) {
+  if (!canLoop(n) || t < 0) return Math.abs(t - i);
+  const m = (((t - i) % n) + n) % n;
+  return Math.min(m, n - m);
 }
 
 function aspectOf(a: ArtworkSource): number {
@@ -146,9 +191,80 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
   });
 
   const lookTmp = new THREE.Vector3();
+  const last = stops.length - 1;
+  const loops = canLoop(stops.length);
+
+  /** 작품 i 앞에 선 카메라 자리 (길 바깥쪽으로 비켜선 곳) */
+  const standAt = (i: number, target: THREE.Vector3) => {
+    const { p, left } = at(stops[i].viewDist);
+    return target.set(p.x - left.x * out, WALK.eye, p.z - left.z * out);
+  };
+  // 고리 구간: 마지막 작품 자리 → 원을 따라 앞으로(분수를 왼쪽에 두고) → 첫 작품 자리
+  const loopFrom = new THREE.Vector3();
+  const loopTo = new THREE.Vector3();
+  let loopPhi0 = 0;
+  let loopPhi1 = 0;
+  let loopR0 = 0;
+  let loopR1 = 0;
+  let loopMetres: number | null = null;
+  if (loops) {
+    standAt(last, loopFrom);
+    standAt(0, loopTo);
+    loopPhi0 = Math.atan2(loopFrom.x, loopFrom.z);
+    loopPhi1 = Math.atan2(loopTo.x, loopTo.z);
+    while (loopPhi1 <= loopPhi0) loopPhi1 += Math.PI * 2;
+    loopR0 = Math.hypot(loopFrom.x, loopFrom.z);
+    loopR1 = Math.hypot(loopTo.x, loopTo.z);
+    loopMetres = (loopPhi1 - loopPhi0) * (loopR0 + loopR1) / 2;
+  }
+  // t = -1, 0, 1, … , n-1, n(한 바퀴 돈 첫 작품), … , 2n-1 에서 걸은 거리 — 사이는 직선으로 잇는다
+  const walked: number[] = [0, ...stops.map((s) => s.viewDist)];
+  if (loops && loopMetres !== null) {
+    const lap = stops[last].viewDist + loopMetres - stops[0].viewDist;
+    for (let i = 0; i <= last; i++) walked.push(stops[i].viewDist + lap);
+  }
+  const metresAt = (t: number) => {
+    const x = THREE.MathUtils.clamp(t + 1, 0, walked.length - 1);
+    const k = Math.min(Math.floor(x), walked.length - 2);
+    return k < 0 ? walked[0] : THREE.MathUtils.lerp(walked[k], walked[k + 1], x - k);
+  };
+  const tAtMetres = (m: number) => {
+    if (walked.length < 2 || m <= walked[0]) return -1;
+    for (let k = 0; k < walked.length - 1; k++) {
+      if (m <= walked[k + 1]) return k - 1 + (m - walked[k]) / Math.max(walked[k + 1] - walked[k], 1e-6);
+    }
+    return walked.length - 2;
+  };
+
+  const lookOf = (i: number, target: THREE.Vector3) => {
+    if (i < 0 || !stops[i]) {
+      // 입구: 정문 너머 대로 끝의 분수와 도서관을 본다 (정문 박공까지 보이게 살짝 위로)
+      return target.set(0, 5.5, 0);
+    }
+    const s = stops[i];
+    return target.set(s.center.x, s.center.y - lookDrop, s.center.z);
+  };
+
   const pose = (t: number, outPos: THREE.Vector3, outLook: THREE.Vector3) => {
-    const last = stops.length - 1;
-    const tt = THREE.MathUtils.clamp(t, -1, Math.max(last, 0));
+    let tt = THREE.MathUtils.clamp(t, -1, maxTarget(stops.length));
+    // 한 바퀴 돈 뒤(t ≥ n)는 처음 바퀴와 같은 자리
+    if (loops && tt >= stops.length) tt -= stops.length;
+    if (loops && tt > last) {
+      const f = tt - last;
+      const phi = THREE.MathUtils.lerp(loopPhi0, loopPhi1, f);
+      const r = THREE.MathUtils.lerp(loopR0, loopR1, f);
+      outPos.set(Math.sin(phi) * r, WALK.eye, Math.cos(phi) * r);
+      // 시선은 걸은 거리로 정한다 (고리 구간은 수십 m라 비율로 하면 한참 뒤를 돌아본다):
+      // 떠나며 처음 6 m 동안 마지막 작품 → 걷는 방향(φ 가 커지는 쪽) 앞, 도착하기 8 m 전부터 첫 작품
+      const walkedM = f * (loopMetres ?? 0);
+      const leftM = (loopMetres ?? 0) - walkedM;
+      const ahead = lookTmp.set(outPos.x + Math.cos(phi) * 10, WALK.eye, outPos.z - Math.sin(phi) * 10);
+      lookOf(last, outLook).lerp(ahead, THREE.MathUtils.smoothstep(walkedM, 0, 6));
+      const b = lookOf(0, ahead);
+      outLook.lerp(b, 1 - THREE.MathUtils.smoothstep(leftM, 0, 8));
+      return;
+    }
+    tt = Math.min(tt, Math.max(last, 0));
     const i0 = Math.floor(tt);
     const f = tt - i0;
     const distOf = (i: number) => (i < 0 ? 0 : stops[i]?.viewDist ?? 0);
@@ -159,14 +275,6 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
     const lateral = THREE.MathUtils.lerp(outOf(i0), outOf(Math.min(i0 + 1, last)), f);
     outPos.set(p.x - left.x * lateral, WALK.eye, p.z - left.z * lateral);
 
-    const lookOf = (i: number, target: THREE.Vector3) => {
-      if (i < 0 || !stops[i]) {
-        // 입구: 정문 너머 대로 끝의 분수와 도서관을 본다 (정문 박공까지 보이게 살짝 위로)
-        return target.set(0, 5.5, 0);
-      }
-      const s = stops[i];
-      return target.set(s.center.x, s.center.y - lookDrop, s.center.z);
-    };
     const a = lookOf(i0, outLook);
     const b = lookOf(Math.min(i0 + 1, last), lookTmp);
     // 걷는 중간에는 길 앞쪽을 보고, 작품에 가까워지면 작품을 본다.
@@ -179,7 +287,7 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
     }
   };
 
-  return { curve, length, radius, entranceZ, stops, pose, at };
+  return { curve, length, radius, entranceZ, stops, pose, at, loopMetres, metresAt, tAtMetres };
 }
 
 /** 관람 상태 (HTML 오버레이와 3D 씬이 함께 쓴다). */
@@ -191,6 +299,8 @@ interface GalleryState {
   setData: (arts: ArtworkSource[], info: ExhibitionInfo, bg: ExhibitionBackground | null) => void;
   /** 배경 모델·텍스처를 다 불러왔는지 */
   sceneryReady: boolean;
+  /** 지금 산책로 배치 (어느 쪽으로 도는 게 가까운지 걸은 거리로 잴 때 쓴다) */
+  layout: GalleryLayout | null;
 
   /** 목표 위치 (카메라가 부드럽게 따라감) */
   target: number;
@@ -217,11 +327,12 @@ export const useGallery = create<GalleryState>((set, get) => ({
   loaded: false,
   setData: (arts, info, background) => set({ arts, info, background, loaded: true }),
   sceneryReady: false,
+  layout: null,
 
   target: -1,
   setTarget: (t) => {
     const n = get().arts.length;
-    set({ target: THREE.MathUtils.clamp(t, -1, Math.max(n - 1, 0)) });
+    set({ target: THREE.MathUtils.clamp(t, -1, maxTarget(n)) });
   },
   current: -1,
   setCurrent: (current) => set({ current }),
@@ -236,14 +347,48 @@ export const useGallery = create<GalleryState>((set, get) => ({
   toggleList: (v) => set((s) => ({ listOpen: v ?? !s.listOpen })),
 }));
 
-/** 작품 i 로 이동 (관람 시작 전이면 시작 처리도 함께). */
-export function goTo(i: number) {
+/**
+ * 작품 i 로 이동 (관람 시작 전이면 시작 처리도 함께). i = -1 은 입구.
+ * 작품 i 는 이번 바퀴(i)와 원을 따라 이어 간 다음 바퀴(i + n) 두 자리가 있다:
+ *  - dir = 1: 지금 카메라보다 앞쪽 자리 (마지막 작품에서 '처음으로'·크게 보기 '다음'은 되감지 않고 분수를 돌아 이어 걷는다)
+ *  - dir = -1: 뒤쪽 자리
+ *  - dir = 0: 카메라에서 걸어서 더 가까운 자리 (작품 목록·아래 작품 줄·작품 누르기·Home/End)
+ */
+export function goTo(i: number, dir: -1 | 0 | 1 = 0) {
   const s = useGallery.getState();
   if (!s.started) useGallery.setState({ started: true });
-  s.setTarget(i);
+  const n = s.arts.length;
+  if (i < 0 || !canLoop(n)) {
+    s.setTarget(i);
+    return;
+  }
+  const k = i % n;
+  const here = s.current;
+  let pick: number;
+  if (dir > 0) pick = k >= here - 1e-3 ? k : k + n;
+  else if (dir < 0) pick = k + n <= here + 1e-3 ? k + n : k;
+  else {
+    const L = s.layout;
+    const far = (c: number) => (L ? Math.abs(L.metresAt(c) - L.metresAt(here)) : Math.abs(c - here));
+    pick = far(k) <= far(k + n) ? k : k + n;
+  }
+  s.setTarget(pick);
 }
 
-/** 현재 가장 가까운 작품 번호 (-1 = 입구) */
-export function nearestIndex(t: number) {
-  return Math.round(t);
+/** 한 바퀴 돌아 첫 작품 앞에 막 도착한 참인가 (카메라가 마지막 몇 cm를 다가가는 동안 목표 번호는 아직 n) */
+export function arrivedAtFirstAgain(s = useGallery.getState()) {
+  const n = s.arts.length;
+  return canLoop(n) && Math.round(s.target) === n && stopIndex(s.current, n) === 0 && offStop(s.current, s.layout) < 0.22;
+}
+
+/** 한 작품 앞(+1)·뒤(-1)로 (‹ › 버튼·방향키). 마지막 다음은 원을 따라 첫 작품으로 이어진다. */
+export function step(d: 1 | -1) {
+  const s = useGallery.getState();
+  if (!s.started) useGallery.setState({ started: true });
+  const n = s.arts.length;
+  let next = Math.round(s.target) + d;
+  // 첫 작품에서 뒤로는 입구 쪽 — 한 바퀴 돌아 막 도착했을 때도 같게
+  if (d < 0 && arrivedAtFirstAgain(s)) next = -1;
+  if (next > maxTarget(n)) next -= n;
+  s.setTarget(next);
 }

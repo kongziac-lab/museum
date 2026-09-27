@@ -6,7 +6,7 @@ import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
-import { buildLayout, goTo, useGallery } from "@/lib/gallery";
+import { arrivedAtFirstAgain, buildLayout, canLoop, goTo, offStop, step, stopIndex, useGallery, type GalleryLayout } from "@/lib/gallery";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
 import { GalleryScene } from "./GalleryScene";
 import { detectQuality, type Quality } from "./scene/common";
@@ -38,6 +38,21 @@ function snap(direction: number) {
   s.setTarget(next);
 }
 
+/** 크게 보기에서 이전·다음 작품 (마지막 다음은 첫 작품 — 뒤에서는 카메라도 원을 따라 이어 걷는다) */
+function moveDetail(d: number) {
+  const s = useGallery.getState();
+  if (s.detail === null) return;
+  const n = s.arts.length;
+  let next = s.detail + d;
+  if (next >= n) {
+    if (!canLoop(n)) return;
+    next = 0;
+  }
+  if (next < 0) return;
+  s.openDetail(next);
+  goTo(next, d > 0 ? 1 : -1); // 닫으면 그 작품 앞에 서 있도록 (마지막 다음이면 뒤에서 원을 따라 이어 걷는다)
+}
+
 function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const el = ref.current;
@@ -63,10 +78,11 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
       idle = setTimeout(() => snap(lastDir), 260);
     };
 
-    let drag: { x: number; y: number; start: number; id: number; moved: boolean } | null = null;
+    // 끄는 만큼 목표를 더해 간다 (한 바퀴 돌아 번호를 되돌려 세도 어긋나지 않게 절대값 대신 변화량으로)
+    let drag: { x: number; y: number; last: number; id: number; moved: boolean } | null = null;
     const onDown = (e: PointerEvent) => {
       if (blocked() || e.button > 0 || onUi(e)) return;
-      drag = { x: e.clientX, y: e.clientY, start: useGallery.getState().target, id: e.pointerId, moved: false };
+      drag = { x: e.clientX, y: e.clientY, last: 0, id: e.pointerId, moved: false };
     };
     const onMove = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
@@ -75,7 +91,9 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
       const forward = Math.abs(dy) > Math.abs(dx) ? -dy : -dx; // 위로·왼쪽으로 밀면 앞으로
       if (Math.abs(forward) > 6) drag.moved = true;
       const span = Math.min(window.innerWidth, window.innerHeight) * 0.45;
-      useGallery.getState().setTarget(drag.start + forward / span);
+      const s = useGallery.getState();
+      s.setTarget(s.target + forward / span - drag.last);
+      drag.last = forward / span;
       lastDir = Math.sign(forward);
     };
     const onUp = (e: PointerEvent) => {
@@ -96,8 +114,8 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
       const forward = ["ArrowRight", "ArrowDown", "PageDown", " "].includes(e.key);
       const back = ["ArrowLeft", "ArrowUp", "PageUp"].includes(e.key);
       if (s.detail !== null) {
-        if (forward) s.openDetail(Math.min(s.detail + 1, s.arts.length - 1));
-        if (back) s.openDetail(Math.max(s.detail - 1, 0));
+        if (forward) moveDetail(1);
+        if (back) moveDetail(-1);
         if (forward || back) e.preventDefault();
         return;
       }
@@ -108,9 +126,9 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
         }
         return;
       }
-      if (forward) goTo(idx + 1);
-      else if (back) goTo(idx - 1);
-      else if (e.key === "Enter" && idx >= 0) s.openDetail(idx);
+      if (forward) step(1);
+      else if (back) step(-1);
+      else if (e.key === "Enter" && idx >= 0) s.openDetail(stopIndex(idx, s.arts.length));
       else if (e.key === "Home") goTo(0);
       else if (e.key === "End") goTo(s.arts.length - 1);
       else return;
@@ -215,14 +233,14 @@ function Intro() {
   );
 }
 
-function Caption() {
+function Caption({ layout }: { layout: GalleryLayout | null }) {
   const arts = useGallery((s) => s.arts);
   const current = useGallery((s) => s.current);
   const started = useGallery((s) => s.started);
   const openDetail = useGallery((s) => s.openDetail);
-  const idx = Math.round(current);
+  const idx = stopIndex(current, arts.length);
   const art = arts[idx];
-  const show = started && art && Math.abs(current - idx) < 0.22;
+  const show = started && art && offStop(current, layout) < 0.22;
   return (
     <AnimatePresence mode="wait">
       {show && (
@@ -251,7 +269,8 @@ function Caption() {
           {idx === arts.length - 1 && (
             <p className="mt-3 text-center text-xs text-stone-500">
               마지막 작품입니다 ·{" "}
-              <button onClick={() => goTo(0)} className="font-bold text-stone-800 underline">
+              {/* 되감지 않고 분수를 돌아 첫 작품까지 이어 걷는다 */}
+              <button onClick={() => goTo(0, 1)} className="font-bold text-stone-800 underline">
                 처음으로
               </button>
             </p>
@@ -271,7 +290,7 @@ function Caption() {
 function Filmstrip() {
   const arts = useGallery((s) => s.arts);
   const current = useGallery((s) => s.current);
-  const idx = Math.round(current);
+  const idx = stopIndex(current, arts.length);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   useEffect(() => {
     refs.current[idx]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
@@ -299,7 +318,7 @@ function Filmstrip() {
   );
 }
 
-function Hud() {
+function Hud({ layout }: { layout: GalleryLayout | null }) {
   const started = useGallery((s) => s.started);
   const info = useGallery((s) => s.info);
   const arts = useGallery((s) => s.arts);
@@ -307,7 +326,16 @@ function Hud() {
   const current = useGallery((s) => s.current);
   const toggleList = useGallery((s) => s.toggleList);
   const idx = Math.round(target);
-  const moved = Math.abs(current) > 0.5 || idx > 0;
+  const n = arts.length;
+  // 첫 작품 앞이면 ‹ 는 쓸 수 없다 (한 바퀴 돌아 막 도착해 목표 번호가 아직 n 일 때도)
+  const atFirst = idx === 0 || arrivedAtFirstAgain();
+  const atLast = stopIndex(idx, n) === n - 1;
+  // 한 번 움직였으면 안내 문구는 다시 띄우지 않는다 (한 바퀴 돌아 첫 작품으로 와도)
+  const [movedOnce, setMovedOnce] = useState(false);
+  const moved = movedOnce || Math.abs(current) > 0.5 || idx > 0;
+  useEffect(() => {
+    if (moved && !movedOnce) setMovedOnce(true);
+  }, [moved, movedOnce]);
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   if (!started) return null;
   return (
@@ -344,18 +372,19 @@ function Hud() {
       {/* 아래 */}
       <div className="flex flex-col items-center gap-3 md:items-stretch">
         <div className="flex w-full justify-center md:justify-start">
-          <Caption />
+          <Caption layout={layout} />
         </div>
         <div className="flex w-full items-center justify-center gap-3">
-          <button onClick={() => goTo(idx - 1)} disabled={idx <= 0} className={`${btn} h-12 w-12 text-2xl md:h-14 md:w-14`} aria-label="이전 작품">
+          <button onClick={() => step(-1)} disabled={idx < 0 || atFirst} className={`${btn} h-12 w-12 text-2xl md:h-14 md:w-14`} aria-label="이전 작품">
             ‹
           </button>
           <Filmstrip />
           <button
-            onClick={() => goTo(idx + 1)}
-            disabled={idx >= arts.length - 1}
+            onClick={() => step(1)}
+            disabled={!canLoop(n) && idx >= n - 1}
             className={`${btn} h-12 w-12 text-2xl md:h-14 md:w-14`}
-            aria-label="다음 작품"
+            aria-label={atLast ? "처음 작품으로" : "다음 작품"}
+            title={atLast ? "처음 작품으로" : undefined}
           >
             ›
           </button>
@@ -438,12 +467,7 @@ function Detail() {
   const openDetail = useGallery((s) => s.openDetail);
   const art = detail !== null ? arts[detail] : null;
 
-  const move = (d: number) => {
-    if (detail === null) return;
-    const n = THREE.MathUtils.clamp(detail + d, 0, arts.length - 1);
-    openDetail(n);
-    goTo(n); // 닫으면 그 작품 앞에 서 있도록
-  };
+  const lastArt = detail !== null && detail === arts.length - 1;
 
   return (
     <AnimatePresence>
@@ -477,15 +501,15 @@ function Detail() {
             {art.nationality && <p className="mt-1 text-stone-500">{art.nationality}</p>}
             {art.description && <p className="mt-4 whitespace-pre-line leading-relaxed text-stone-700">{art.description}</p>}
             <div className="mt-6 flex items-center gap-2">
-              <button onClick={() => move(-1)} disabled={detail <= 0} className="flex-1 rounded-xl bg-stone-100 py-2.5 font-bold disabled:opacity-40">
+              <button onClick={() => moveDetail(-1)} disabled={detail <= 0} className="flex-1 rounded-xl bg-stone-100 py-2.5 font-bold disabled:opacity-40">
                 ‹ 이전
               </button>
               <button
-                onClick={() => move(1)}
-                disabled={detail >= arts.length - 1}
+                onClick={() => moveDetail(1)}
+                disabled={!canLoop(arts.length) && detail >= arts.length - 1}
                 className="flex-1 rounded-xl bg-stone-100 py-2.5 font-bold disabled:opacity-40"
               >
-                다음 ›
+                {lastArt ? "처음으로 ›" : "다음 ›"}
               </button>
             </div>
             <button onClick={() => openDetail(null)} className="mt-2 w-full rounded-xl bg-stone-900 py-2.5 font-bold text-white">
@@ -519,6 +543,9 @@ export function OpenGallery() {
   const arts = useGallery((s) => s.arts);
   const portrait = usePortrait();
   const layout = useMemo(() => (arts.length ? buildLayout(arts, { portrait }) : null), [arts, portrait]);
+  useEffect(() => {
+    useGallery.setState({ layout });
+  }, [layout]);
   const rootRef = useRef<HTMLDivElement>(null);
   useWalkInput(rootRef);
   // 처음 한 번만 정한다 (휴대폰·저사양은 가볍게)
@@ -541,7 +568,7 @@ export function OpenGallery() {
         {layout && <GalleryScene layout={layout} quality={quality} />}
       </Canvas>
       <Intro />
-      <Hud />
+      <Hud layout={layout} />
       <ListOverlay />
       <Detail />
     </div>

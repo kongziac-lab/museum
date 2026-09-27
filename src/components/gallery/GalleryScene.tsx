@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { useGallery, type GalleryLayout } from "@/lib/gallery";
+import { WALK, offStop, stopDistance, stopIndex, useGallery, type GalleryLayout } from "@/lib/gallery";
 import type { Quality } from "./scene/common";
 import { Atmosphere } from "./scene/Atmosphere";
 import { Site, useSiteMaterials } from "./scene/Grounds";
@@ -25,12 +25,42 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
   const look = useMemo(() => new THREE.Vector3(), []);
   const smoothLook = useRef<THREE.Vector3 | null>(null);
   const lastReport = useRef(0);
+  /** 지금 향해 걷는 곳과, 그 이동의 최고 속도 (m/s) */
+  const move = useRef({ goal: Number.NaN, cap: Infinity });
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.1);
     const st = useGallery.getState();
-    t.current = THREE.MathUtils.damp(t.current, st.target, 2.4, dt);
-    if (Math.abs(t.current - st.target) < 0.0005) t.current = st.target;
+    const n = layout.stops.length;
+    const prev = t.current;
+    const L = layout;
+    let goal = st.target;
+    // 고리 구간에서 입구로 돌아갈 때(제목 버튼 등): 작품을 모두 되짚기보다 앞으로 첫 작품까지 가서 나가는 쪽이 짧으면 그쪽으로
+    if (L.loopMetres && goal < 0 && prev > n - 1) {
+      const ahead = L.metresAt(n) - L.metresAt(prev) + L.metresAt(0) - L.metresAt(goal);
+      if (ahead < L.metresAt(prev) - L.metresAt(goal)) goal = n;
+    }
+    if (goal !== move.current.goal) {
+      // 새 이동: 마지막 → 첫 작품 고리 구간(수십 m)을 지나면 도착할 때까지 걸음 속도를 넘지 않는다
+      // (그대로 두면 한 걸음 시간에 수십 m를 휙 돌고, 도중에 풀면 갑자기 빨라진다)
+      const lo = Math.min(prev, goal);
+      const hi = Math.max(prev, goal);
+      const span = Math.abs(L.metresAt(goal) - L.metresAt(prev));
+      move.current = { goal, cap: L.loopMetres && lo < n && hi > n - 1 ? Math.max(WALK.loopSpeed, span / 4) : Infinity };
+    }
+    // 번호(t)가 아니라 걸은 거리(m)로 따라간다 — 진입로·고리처럼 길이가 다른 구간을 지나도 속도가 튀지 않게
+    const m0 = L.metresAt(prev);
+    const m1 = L.metresAt(goal);
+    let m = THREE.MathUtils.damp(m0, m1, 2.4, dt);
+    const cap = move.current.cap * dt;
+    m = m0 + THREE.MathUtils.clamp(m - m0, -cap, cap);
+    t.current = Math.abs(m - m1) < 0.004 ? goal : L.tAtMetres(m);
+    // 한 바퀴 돌아 첫 작품(t = n)에 닿으면 처음 바퀴 번호로 되돌려 센다 (같은 자리라 화면은 그대로)
+    if (L.loopMetres && t.current >= n && goal >= n) {
+      t.current -= n;
+      move.current.goal -= n;
+      useGallery.setState(st.target >= n ? { target: st.target - n, current: t.current } : { current: t.current });
+    }
     layout.pose(t.current, pos, look);
 
     // 걷는 동안 아주 살짝 흔들림
@@ -45,7 +75,8 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
     lastReport.current += dt;
     if (lastReport.current > 0.08) {
       lastReport.current = 0;
-      if (Math.abs(st.current - t.current) > 0.002) st.setCurrent(t.current);
+      const cur = useGallery.getState().current;
+      if (Math.abs(cur - t.current) > 0.002) st.setCurrent(t.current);
     }
   });
   return null;
@@ -77,8 +108,9 @@ export function GalleryScene({ layout, quality }: { layout: GalleryLayout; quali
   const background = useGallery((s) => s.background);
   const site = useMemo(() => sitePlan(layout), [layout]);
   const current = useGallery((s) => s.current);
-  const nearest = Math.round(current);
-  const settled = Math.abs(current - nearest) < 0.2;
+  const n = layout.stops.length;
+  const nearest = stopIndex(current, n);
+  const settled = offStop(current, layout) < 0.2;
 
   return (
     <>
@@ -92,7 +124,7 @@ export function GalleryScene({ layout, quality }: { layout: GalleryLayout; quali
         {layout.stops.map((s) => (
           <group key={s.art.id}>
             {s.groupStart && <GroupSign stop={s} layout={layout} />}
-            <ArtStand stop={s} active={settled && nearest === s.index} near={Math.abs(current - s.index) < 7} />
+            <ArtStand stop={s} active={settled && nearest === s.index} near={stopDistance(current, s.index, n) < 7} />
           </group>
         ))}
         <SceneryReady />
