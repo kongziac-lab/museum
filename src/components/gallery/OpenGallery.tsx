@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
+import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
@@ -106,7 +107,8 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
         return;
       }
       if (!s.started) {
-        if (e.key === "Enter" || forward) {
+        // 불러오는 화면이 떠 있는 동안에는 들어가지 않는다 (정문 화면의 '관람 시작'과 같게)
+        if ((e.key === "Enter" || forward) && s.loaded && s.sceneryReady && s.arts.length > 0) {
           e.preventDefault();
           s.start();
         }
@@ -158,6 +160,66 @@ const btn =
   "pointer-events-auto rounded-full bg-white/90 text-stone-800 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:opacity-35";
 
 /* ───────────────────────── 오버레이 ───────────────────────── */
+
+function Intro() {
+  const started = useGallery((s) => s.started);
+  const loaded = useGallery((s) => s.loaded);
+  const sceneryReady = useGallery((s) => s.sceneryReady);
+  const info = useGallery((s) => s.info);
+  const count = useGallery((s) => s.arts.length);
+  const start = useGallery((s) => s.start);
+  const toggleList = useGallery((s) => s.toggleList);
+  const { progress } = useProgress();
+  const ready = loaded && sceneryReady;
+  return (
+    <AnimatePresence>
+      {!started && (
+        <motion.div
+          key="intro"
+          className="absolute inset-0 z-30 flex items-center justify-center bg-gradient-to-b from-sky-950/55 via-sky-900/25 to-transparent px-6"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.8 } }}
+        >
+          <div className="max-w-xl text-center text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)]">
+            {info.상단문구 && <p className="mb-4 text-sm tracking-[0.3em] text-white/85">{info.상단문구}</p>}
+            <h1 className="font-display text-4xl font-bold leading-tight md:text-6xl">{info.제목 ?? "한글 이름 꾸미기 대회"}</h1>
+            <p className="mt-3 font-display text-xl text-white/90 md:text-3xl">{info.부제 ?? "수상작 전시"}</p>
+            {info.소개문구 && <p className="mt-6 text-base text-white/85 md:text-lg">{info.소개문구}</p>}
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={start}
+                disabled={!ready || count === 0}
+                className="min-w-[9.5rem] rounded-full bg-white px-8 py-3.5 text-lg font-bold text-sky-900 shadow-xl transition hover:bg-sky-50 active:scale-95 disabled:opacity-50"
+              >
+                {ready ? "관람 시작" : `준비 중 ${Math.round(progress)}%`}
+              </button>
+              <button
+                onClick={() => toggleList(true)}
+                disabled={!loaded}
+                className="rounded-full border border-white/70 px-6 py-3.5 text-base font-medium text-white backdrop-blur-sm transition hover:bg-white/15"
+              >
+                작품 목록 {count > 0 && `(${count})`}
+              </button>
+            </div>
+            <p className="mt-6 text-sm text-white/80">스크롤하거나 화면을 밀어서 한 작품씩 걸어가며 볼 수 있어요</p>
+          </div>
+          {info.배경출처 && (
+            <p className="absolute bottom-3 left-1/2 w-max max-w-[92vw] -translate-x-1/2 rounded-xl bg-black/35 px-3 py-1 text-center text-[11px] text-white/90 backdrop-blur-sm">
+              {info.배경출처링크 ? (
+                <a href={info.배경출처링크} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+                  {info.배경출처}
+                </a>
+              ) : (
+                info.배경출처
+              )}
+            </p>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
 function Caption({ layout }: { layout: GalleryLayout | null }) {
   const arts = useGallery((s) => s.arts);
@@ -408,7 +470,7 @@ function usePortrait() {
   return portrait;
 }
 
-/** 첫 화면·크게 보기가 3D 를 가리는 동안은 초당 10번만 그린다 (카메라는 계속 옮긴 작품 쪽으로 걸어간다) */
+/** 불러오는 동안·크게 보기가 열려 있는 동안 3D 는 초당 10번만 그린다 (카메라는 계속 옮긴 작품 쪽으로 걸어간다) */
 function SlowWhileViewing({ open }: { open: boolean }) {
   const invalidate = useThree((s) => s.invalidate);
   useEffect(() => {
@@ -439,8 +501,8 @@ export function OpenGallery() {
   useViewerHistory();
   const arts = useGallery((s) => s.arts);
   const open = useGallery((s) => s.detail !== null);
-  // 첫 화면(불투명)이나 크게 보기가 3D 를 가리는 동안은 천천히 그린다
-  const hidden = useGallery((s) => !s.started) || open;
+  // 불러오는 동안(기념 화면이 3D 를 가림)과 크게 보기 중에는 천천히 그린다
+  const loading = useGallery((s) => !(s.loaded && s.sceneryReady));
   const livePortrait = usePortrait();
   // 크게 보기 중에 휴대폰을 돌려도 뒤의 3D 배치는 다시 만들지 않는다 (닫을 때 반영)
   const frozen = useRef(livePortrait);
@@ -459,8 +521,8 @@ export function OpenGallery() {
   return (
     <div ref={rootRef} id="museum-root" className="bg-[#c9d3d6]">
       <Canvas
-        frameloop={hidden ? "demand" : "always"}
-        inert={hidden}
+        frameloop={open || loading ? "demand" : "always"}
+        inert={open}
         shadows={{ type: THREE.PCFSoftShadowMap }}
         dpr={[1, 1.5]}
         // PC는 후처리(Effects)에서 톤 매핑을 하므로 렌더러는 그대로 둔다
@@ -472,12 +534,13 @@ export function OpenGallery() {
         camera={{ fov: portrait ? 64 : 55, near: 0.1, far: 1500, position: [0, 1.62, 40] }}
       >
         {layout && <GalleryScene layout={layout} quality={quality} />}
-        <SlowWhileViewing open={hidden} />
+        <SlowWhileViewing open={open || loading} />
       </Canvas>
-      <Splash />
-      <Hud layout={layout} inert={hidden} />
+      <Intro />
+      <Hud layout={layout} inert={open} />
       <ListOverlay />
       <ArtViewer />
+      <Splash />
     </div>
   );
 }

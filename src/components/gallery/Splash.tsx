@@ -1,20 +1,22 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import { useGallery } from "@/lib/gallery";
 import type { Commemoration } from "@/lib/types";
 
 /*
- * 첫 화면 — 한글날 기념 플래시.
- * 짙은 남색 바탕에 기념 두 가지(예: 훈민정음 반포 580돌 · 한글날 기념식 100돌)를 파랑·빨강 두 판으로 나누고,
- * 판마다 옛 글자·자모가 천천히 흐른다. 가운데 둥근 표지가 돌며 '한글'을 여러 나라 글자로 바꿔 보인다.
- * 처음에 000 → 100 막이 한 번 올라가고, '관람 시작'을 누르면 화면 전체가 위로 걷히며 3D 전시장이 나온다.
- * 막 뒤에서 3D 를 미리 불러 두므로 준비가 끝나야 '관람 시작'이 켜진다.
+ * 불러오는 화면 — 한글날 기념 플래시.
+ * 3D 전시장(정문 첫 화면)을 불러오는 동안 짙은 남색 바탕에 기념 두 가지(예: 훈민정음 반포 580돌 · 한글날 기념식 100돌)를
+ * 파랑·빨강 두 판으로 보이고, 판마다 옛 글자·자모가 천천히 흐른다. 가운데 둥근 표지는 '한글'을 여러 나라 글자로 바꿔 보인다.
+ * 아래에 실제로 불러온 만큼 000 → 100 을 세고, 다 불러오면 화면 전체가 위로 걷히며 정문 첫 화면이 나온다.
  */
 
-const CURTAIN_MS = 1500;
+/** 너무 빨리 불러와도 이만큼은 보여 준다 (글자가 다 올라오게) */
+const MIN_MS = 2600;
+/** 배경을 끝내 못 불러와도 이만큼 지나면 걷는다 (정문 화면의 '준비 중'이 이어받는다) */
+const MAX_MS = 30000;
 
 /** 판 색과 흐르는 글자 (첫 판: 훈민정음, 둘째 판: 가갸날) */
 const THEMES = [
@@ -138,7 +140,7 @@ function Panel({ item, theme, delay, single, first }: { item: Commemoration; the
   );
 }
 
-function Badge({ ring, delay, onClick, disabled }: { ring: string; delay: number; onClick: () => void; disabled: boolean }) {
+function Badge({ ring, delay }: { ring: string; delay: number }) {
   const [w, setW] = useState(0);
   useEffect(() => {
     if (reduced()) return;
@@ -154,15 +156,9 @@ function Badge({ ring, delay, onClick, disabled }: { ring: string; delay: number
   const word = WORDS[w];
   const R = 58;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label="관람 시작"
-      className="group absolute left-1/2 top-1/2 z-[18] h-[var(--badge)] w-[var(--badge)] -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-500 hover:scale-105 disabled:cursor-default disabled:hover:scale-100"
-    >
+    <div aria-hidden className="absolute left-1/2 top-1/2 z-[18] h-[var(--badge)] w-[var(--badge)] -translate-x-1/2 -translate-y-1/2 rounded-full">
       <span className="sp-in absolute inset-0 block" style={{ "--d": `${delay}s` } as CSSProperties}>
-        <span className="absolute inset-0 rounded-full border border-white/20 bg-[rgba(6,18,43,.74)] backdrop-blur-md transition-shadow duration-500 group-hover:shadow-[0_0_34px_rgba(255,224,150,.4),0_0_100px_rgba(255,206,120,.28)]" />
+        <span className="absolute inset-0 rounded-full border border-white/20 bg-[rgba(6,18,43,.74)] backdrop-blur-md" />
         <svg viewBox="0 0 158 158" className="sp-spin absolute inset-0 h-full w-full" aria-hidden>
           <defs>
             <path id="sp-ring" d={`M79,79 m-${R},0 a${R},${R} 0 1,1 ${2 * R},0 a${R},${R} 0 1,1 -${2 * R},0`} />
@@ -181,41 +177,51 @@ function Badge({ ring, delay, onClick, disabled }: { ring: string; delay: number
           </span>
         </span>
       </span>
-    </button>
+    </div>
   );
 }
 
 export function Splash() {
-  const started = useGallery((s) => s.started);
   const loaded = useGallery((s) => s.loaded);
   const sceneryReady = useGallery((s) => s.sceneryReady);
   const info = useGallery((s) => s.info);
   const count = useGallery((s) => s.arts.length);
-  const start = useGallery((s) => s.start);
-  const toggleList = useGallery((s) => s.toggleList);
   const { progress } = useProgress();
-  const ready = loaded && sceneryReady && count > 0;
+  // 작품이 하나도 없으면 배경을 기다리지 않는다 (정문 화면이 알려 준다)
+  const ready = loaded && (sceneryReady || count === 0);
 
-  // 처음 한 번 000 → 100 막
-  const [curtain, setCurtain] = useState(() => !reduced());
-  const [n, setN] = useState(0);
+  const [t0] = useState(() => performance.now());
+  const [done, setDone] = useState(false);
+  // 배경을 끝내 못 불러와도 MAX_MS 가 지나면 걷는다
   useEffect(() => {
-    if (!curtain) return;
+    const id = window.setTimeout(() => setDone(true), MAX_MS);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  // 불러온 만큼 부드럽게 센다 (다 불러오기 전에는 99 에서 멈춘다)
+  const target = ready ? 100 : Math.min(99, Math.round(progress));
+  const [n, setN] = useState(0);
+  const shown = useRef(0);
+  useEffect(() => {
     let raf = 0;
-    const t0 = performance.now();
     const tick = () => {
-      const p = Math.min(1, (performance.now() - t0) / CURTAIN_MS);
-      setN(Math.round((1 - Math.pow(1 - p, 3)) * 100));
-      if (p < 1) raf = requestAnimationFrame(tick);
-      else window.setTimeout(() => setCurtain(false), 250);
+      const v = shown.current;
+      if (v >= target) return;
+      shown.current = Math.min(target, v + Math.max(1, Math.round((target - v) * 0.12)));
+      setN(shown.current);
+      raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  // 막이 걷히는 동안 글자가 올라오게
-  const [D] = useState(() => (reduced() ? 0 : (CURTAIN_MS + 350) / 1000));
+  }, [target]);
+  // 100 까지 다 센 뒤에 걷는다 (너무 빨리 불러와도 MIN_MS 는 보여 준다)
+  useEffect(() => {
+    if (!ready || n < 100) return;
+    const id = window.setTimeout(() => setDone(true), Math.max(0, MIN_MS - (performance.now() - t0)) + 300);
+    return () => window.clearTimeout(id);
+  }, [ready, n, t0]);
 
+  const D = 0.15;
   const items: Commemoration[] = info.기념?.length
     ? info.기념.slice(0, 2)
     : [{ 햇수: info.제목 ?? "한글 이름 꾸미기 대회", 단위: "", 이름: info.부제 ?? "수상작 전시관" }];
@@ -231,13 +237,14 @@ export function Splash() {
     "KEIMYUNG UNIVERSITY",
   ].filter(Boolean) as string[];
 
-
   return (
     <AnimatePresence>
-      {!started && (
+      {!done && (
         <motion.div
           key="splash"
-          className="absolute inset-0 z-30 flex flex-col overflow-hidden bg-[#06122b] text-white [word-break:keep-all] [--badge:clamp(80px,min(24vw,12vh),158px)] [--num:clamp(60px,min(24vw,10.5vh),176px)] md:[--badge:clamp(96px,min(11vw,18vh),172px)] md:[--num:clamp(64px,min(13.5vw,22vh),220px)]"
+          role="status"
+          aria-label={`${title} ${sub}을 불러오고 있습니다`}
+          className="absolute inset-0 z-[60] flex flex-col overflow-hidden bg-[#06122b] text-white [word-break:keep-all] [--badge:clamp(80px,min(24vw,12vh),158px)] [--num:clamp(60px,min(24vw,10.5vh),176px)] md:[--badge:clamp(96px,min(11vw,18vh),172px)] md:[--num:clamp(64px,min(13.5vw,22vh),220px)]"
           initial={{ y: 0 }}
           exit={{ y: "-101%", transition: { duration: 0.9, ease: [0.7, 0, 0.3, 1] } }}
         >
@@ -267,52 +274,24 @@ export function Splash() {
             {items.map((k, i) => (
               <Panel key={i} item={k} theme={THEMES[i % 2]} delay={D + i * 0.1} single={single} first={i === 0} />
             ))}
-            {!single && <Badge ring={ring} delay={D + 0.55} onClick={start} disabled={!ready} />}
+            {!single && <Badge ring={ring} delay={D + 0.55} />}
           </div>
 
-          {/* 아래: 전시 이름 · 입장 */}
-          <div className="relative z-20 border-t border-white/[0.14] bg-[#06122b] px-5 pb-3 pt-4 md:flex md:items-center md:justify-between md:gap-8 md:px-9 md:pb-6 md:pt-5 [@media(max-height:520px)]:pb-5 [@media(max-height:520px)]:pt-2.5">
-            <div className="sp-in min-w-0" style={{ "--d": `${D + 0.7}s` } as CSSProperties}>
-              <p className="sp-serif text-[20px] font-black leading-tight tracking-[0.02em] md:text-[clamp(20px,2vw,26px)] [@media(max-height:520px)]:truncate [@media(max-height:520px)]:text-[17px]">
-                {title} <span className="font-semibold text-white/70">{sub}</span>
-              </p>
-              {info.소개문구 && <p className="mt-1 text-[13px] font-light text-white/65 md:text-[15px] [@media(max-height:520px)]:hidden">{info.소개문구}</p>}
+          {/* 아래: 전시 이름 · 불러온 만큼 */}
+          <div className="relative z-20 border-t border-white/[0.14] bg-[#06122b] px-5 py-4 md:px-9 md:py-5 [@media(max-height:520px)]:py-2.5">
+            {/* 윗줄이 불러온 만큼 차오른다 */}
+            <div className="absolute inset-x-0 -top-px h-px origin-left bg-[#f4ead5] transition-transform duration-300 ease-out" style={{ transform: `scaleX(${n / 100})` }} />
+            <div className="flex items-end justify-between gap-5">
+              <div className="sp-in min-w-0" style={{ "--d": `${D + 0.7}s` } as CSSProperties}>
+                <p className="sp-serif text-[18px] font-black leading-tight tracking-[0.02em] md:text-[clamp(20px,2vw,26px)] [@media(max-height:520px)]:text-[16px]">
+                  {title} <span className="font-semibold text-white/70">{sub}</span>
+                </p>
+                <p className="sp-mono sp-blink mt-1.5 text-[10px] tracking-[0.3em] text-white/55 md:text-[11px]">{ready ? "READY — 전시장으로" : "LOADING — 전시장을 준비하고 있어요"}</p>
+              </div>
+              <span className="sp-mono shrink-0 text-[44px] font-medium leading-none tracking-[0.04em] tabular-nums md:text-[64px] [@media(max-height:520px)]:text-[34px]" aria-hidden>
+                {String(n).padStart(3, "0")}
+              </span>
             </div>
-            <div className="sp-in mt-3.5 flex shrink-0 gap-2.5 md:mt-0" style={{ "--d": `${D + 0.8}s` } as CSSProperties}>
-              <button
-                type="button"
-                onClick={start}
-                disabled={!ready}
-                className="inline-flex h-12 flex-[1.4] items-center justify-center gap-3 whitespace-nowrap rounded-full bg-[#f4ead5] px-6 text-[15px] font-bold [@media(max-height:520px)]:h-10 text-[#06122b] transition hover:bg-white active:scale-[0.97] disabled:bg-white/15 disabled:text-white/70 md:flex-none"
-              >
-                {ready ? (
-                  <>
-                    관람 시작 <span className="sp-mono hidden text-[11px] font-medium tracking-[0.3em] opacity-70 sm:inline">ENTER ↗</span>
-                  </>
-                ) : (
-                  <span className="tabular-nums">준비 중 {Math.round(progress)}%</span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleList(true)}
-                disabled={!loaded}
-                className="inline-flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-white/35 px-5 text-[15px] font-medium [@media(max-height:520px)]:h-10 transition hover:bg-white/10 disabled:opacity-50 md:flex-none"
-              >
-                작품 목록{count > 0 && <span className="sp-mono text-xs opacity-60">{count}</span>}
-              </button>
-            </div>
-            {info.배경출처 && (
-              <p className="mt-2.5 text-center text-[10px] text-white/45 md:absolute md:bottom-1.5 md:right-9 md:mt-0 [@media(max-height:520px)]:bottom-0.5">
-                {info.배경출처링크 ? (
-                  <a href={info.배경출처링크} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
-                    {info.배경출처}
-                  </a>
-                ) : (
-                  info.배경출처
-                )}
-              </p>
-            )}
           </div>
 
           {/* 맨 아래 흐르는 띠 */}
@@ -323,20 +302,6 @@ export function Splash() {
                   {marquee.join(" — ")} —&nbsp;
                 </span>
               ))}
-            </div>
-          </div>
-
-          {/* 처음 막: 000 → 100 */}
-          <div
-            className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-[#06122b]"
-            style={{ transform: curtain ? "translateY(0)" : "translateY(-101%)", transition: `transform .9s cubic-bezier(.7,0,.3,1)` }}
-            aria-hidden
-          >
-            <div className="flex flex-col items-center gap-4">
-              <span className="sp-mono text-[84px] font-medium leading-none tracking-[0.06em] md:text-[100px]">{String(n).padStart(3, "0")}</span>
-              <span className="sp-mono sp-blink text-[10px] tracking-[0.4em] text-white/50">
-                {items.map((k) => `${k.햇수}`).join(" · ")} — 한글날
-              </span>
             </div>
           </div>
         </motion.div>
