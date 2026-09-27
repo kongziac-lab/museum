@@ -9,12 +9,14 @@ import { WALK, goTo, offStop, openViewer, stopIndex, useGallery, type GalleryLay
 import { FONT, SCENERY, fitText, useCanvasTexture, useLazyTexture } from "./common";
 import { useTexture } from "@react-three/drei";
 import type { SitePlan } from "./sitePlan";
+import { ArtFrame, FrameLegs, artZ, frameOuter, pickFrameStyle, SPECS } from "./Frames";
 
 /* 공용 재질 */
 const frameMat = new THREE.MeshStandardMaterial({ color: "#26282b", metalness: 0.6, roughness: 0.38 });
 const steelMat = new THREE.MeshStandardMaterial({ color: "#8d9095", metalness: 0.85, roughness: 0.32 });
-const matBoardMat = new THREE.MeshStandardMaterial({ color: "#f3f0e9", roughness: 0.92 });
-const backMat = new THREE.MeshStandardMaterial({ color: "#a4a7ab", metalness: 0.3, roughness: 0.6 });
+
+/** 액자 모양 (미리보기는 ?frame=) */
+const FRAME = pickFrameStyle("basic");
 
 /* ───────────────────────── 작품 스탠드 ───────────────────────── */
 
@@ -22,11 +24,11 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
   const { art, w, h } = stop;
   const tex = useLazyTexture(art.src, near);
   const color = awardColor(art.award);
-  const pad = 0.12;
-  const boardW = w + pad * 2;
-  const boardH = h + pad * 2;
+  const { W: boardW, H: boardH } = frameOuter(FRAME, w, h);
+  const pad = SPECS[FRAME].pad;
   const cy = stop.center.y;
   const legH = cy - boardH / 2;
+  const z = artZ(FRAME);
 
   const label = useCanvasTexture(
     800,
@@ -70,18 +72,9 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
         onPointerOver={() => (document.body.style.cursor = "pointer")}
         onPointerOut={() => (document.body.style.cursor = "")}
       >
-        {/* 금속 액자 틀 */}
-        <RoundedBox args={[boardW + 0.07, boardH + 0.07, 0.05]} radius={0.012} smoothness={3} position={[0, cy, -0.03]} material={frameMat} castShadow receiveShadow />
-        {/* 매트지 */}
-        <mesh position={[0, cy, 0.0]} material={matBoardMat} receiveShadow>
-          <planeGeometry args={[boardW, boardH]} />
-        </mesh>
-        {/* 뒷판 (뒤에서 봐도 검은 덩어리로 보이지 않게) */}
-        <mesh position={[0, cy, -0.057]} rotation={[0, Math.PI, 0]} material={backMat} receiveShadow>
-          <planeGeometry args={[boardW, boardH]} />
-        </mesh>
+        <ArtFrame style={FRAME} w={w} h={h} cy={cy} />
         {/* 작품 */}
-        <mesh position={[0, cy, 0.004]}>
+        <mesh position={[0, cy, z]}>
           <planeGeometry args={[w, h]} />
           {tex ? (
             // 작품은 조명 영향 없이 원래 색 그대로
@@ -91,22 +84,13 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
           )}
         </mesh>
         {/* 지금 보고 있는 작품: 부문 색 띠 */}
-        <mesh position={[0, cy - boardH / 2 + 0.03, 0.005]}>
+        <mesh position={[0, cy - h / 2 - pad / 2, z]}>
           <planeGeometry args={[active ? w : w * 0.3, 0.018]} />
           <meshBasicMaterial color={active ? color : "#c9c3b8"} toneMapped={false} />
         </mesh>
       </group>
-      {/* 다리 + 받침판 */}
-      {[-1, 1].map((s) => (
-        <group key={s} position={[(s * boardW) / 2.8, 0, -0.06]}>
-          <mesh position={[0, legH / 2 + 0.01, 0]} material={frameMat} castShadow>
-            <boxGeometry args={[0.05, legH, 0.05]} />
-          </mesh>
-          <mesh position={[0, 0.012, 0]} material={steelMat} castShadow receiveShadow>
-            <boxGeometry args={[0.16, 0.024, 0.34]} />
-          </mesh>
-        </group>
-      ))}
+      {/* 다리 + 받침 */}
+      <FrameLegs style={FRAME} W={boardW} legH={legH} cy={cy} />
       {/* 명패: 작품 오른쪽 앞 낮은 받침 */}
       <group position={[boardW / 2 + 0.6, 0, 0.35]} rotation={[0, -0.25, 0]}>
         <mesh position={[0, 0.48, 0]} material={frameMat} castShadow>
