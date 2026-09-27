@@ -362,6 +362,20 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
       busy.current = false;
     }, 160);
   };
+  // 버튼은 손을 뗄 때(pointerup) 바로 반응한다: iPhone 은 누른 사이 화면이 바뀌면 click 을 건너뛰는 일이 있어
+  // click 만 믿으면 '가로 화면에서 ‹ › 가 안 먹는' 일이 생긴다. 마우스·키보드는 click 으로.
+  const lastPress = useRef(0);
+  const press = (fn: () => void) => ({
+    onPointerUp: (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (e.pointerType === "mouse" || e.currentTarget.disabled) return;
+      lastPress.current = performance.now();
+      fn();
+    },
+    onClick: () => {
+      if (performance.now() - lastPress.current < 700) return;
+      fn();
+    },
+  });
   const onUp = (e: React.PointerEvent) => {
     const s = g.current;
     if (!s || e.pointerId !== s.id) return;
@@ -399,12 +413,47 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
     settle();
   };
 
+  // 휴대폰을 옆으로 돌린 화면: ‹ › 를 기둥 위쪽과 작품 양옆에 둔다 (아래 가장자리는 iPhone 에서 누르기가 잘 안 먹는다)
+  const navTop = touch && !rot && !stack && plan.mode !== "desk";
   const prevLabel = index === 0 && loop ? "마지막 작품으로" : "이전 작품";
   const nextLabel = index === n - 1 && loop ? "처음 작품으로" : "다음 작품";
   const prevOff = !loop && index <= 0;
   const nextOff = !loop && index >= n - 1;
   const counter = `${index + 1} / ${n}`;
   const hideCls = chrome ? "opacity-100" : "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100";
+
+  const railNav = (
+    <div className="mt-2 flex gap-2">
+      <button {...press(() => go(-1))} disabled={prevOff} aria-label={prevLabel} className="h-11 flex-1 rounded-xl bg-white/10 font-bold hover:bg-white/20 active:bg-white/20 disabled:opacity-35">
+        ‹ 이전
+      </button>
+      <button {...press(() => go(1))} disabled={nextOff} aria-label={nextLabel} className="h-11 flex-1 rounded-xl bg-white/10 font-bold hover:bg-white/20 active:bg-white/20 disabled:opacity-35">
+        다음 ›
+      </button>
+    </div>
+  );
+
+  const compactNav = (
+    <div className="mt-2 flex justify-between">
+      <button {...press(() => go(-1))} disabled={prevOff} aria-label={prevLabel} className="h-11 w-11 rounded-full bg-white/10 text-xl active:bg-white/20 disabled:opacity-35">
+        ‹
+      </button>
+      <button {...press(() => go(1))} disabled={nextOff} aria-label={nextLabel} className="h-11 w-11 rounded-full bg-white/10 text-xl active:bg-white/20 disabled:opacity-35">
+        ›
+      </button>
+    </div>
+  );
+
+  const slimNav = (
+    <>
+      <button {...press(() => go(-1))} disabled={prevOff} aria-label={prevLabel} className="flex h-14 w-14 flex-col items-center justify-center rounded-xl text-[11px] font-bold active:bg-white/10 disabled:opacity-35">
+        <span className="text-xl leading-none">‹</span>이전
+      </button>
+      <button {...press(() => go(1))} disabled={nextOff} aria-label={nextLabel} className="flex h-14 w-14 flex-col items-center justify-center rounded-xl text-[11px] font-bold active:bg-white/10 disabled:opacity-35">
+        <span className="text-xl leading-none">›</span>다음
+      </button>
+    </>
+  );
 
   const frameStyle: React.CSSProperties = rot
     ? { left: vp.w, top: 0, width: vp.h, height: vp.w, transform: "rotate(90deg)", transformOrigin: "0 0" }
@@ -488,6 +537,31 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
               </motion.div>
             </motion.div>
 
+            {/* 옆으로 돌린 휴대폰: 작품 양옆 가운데 ‹ › (가장자리에서 떨어진 자리) */}
+            {navTop && (
+              <div
+                className={`pointer-events-none absolute z-[5] transition-opacity duration-200 ${chrome && !sheet ? "opacity-100" : "opacity-0"}`}
+                style={{ left: plan.art.x, top: plan.art.y, width: plan.art.w, height: plan.art.h }}
+              >
+                {(
+                  [
+                    [-1, prevOff, prevLabel, "left-4", "‹"],
+                    [1, nextOff, nextLabel, "right-4", "›"],
+                  ] as const
+                ).map(([d, off, label, side, glyph]) => (
+                  <button
+                    key={d}
+                    {...press(() => go(d))}
+                    disabled={off}
+                    aria-label={label}
+                    className={`absolute top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/50 pb-0.5 text-[28px] leading-none ring-1 ring-white/25 active:scale-95 disabled:hidden ${side} ${chrome && !sheet ? "pointer-events-auto" : ""}`}
+                  >
+                    {glyph}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {stack ? (
               <div className={`transition-opacity duration-200 ${hideCls}`}>
                 {/* 위: 가로로 보기(왼쪽) · 닫기(오른쪽) — 서로 먼 구석이라 잘못 눌러 닫히지 않게 */}
@@ -537,13 +611,13 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                 </div>
                 {/* 맨 아래: 이동 */}
                 <div ref={navRef} className="absolute inset-x-0 bottom-0 flex items-center gap-2 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2">
-                  <button onClick={() => go(-1)} disabled={prevOff} aria-label={prevLabel} className="h-12 flex-1 rounded-2xl bg-white/10 text-base font-bold ring-1 ring-white/15 active:bg-white/20 disabled:opacity-35">
+                  <button {...press(() => go(-1))} disabled={prevOff} aria-label={prevLabel} className="h-12 flex-1 rounded-2xl bg-white/10 text-base font-bold ring-1 ring-white/15 active:bg-white/20 disabled:opacity-35">
                     {index === 0 && loop ? "‹ 마지막으로" : "‹ 이전"}
                   </button>
                   <span className="w-16 shrink-0 text-center text-sm tabular-nums text-white/70" aria-hidden>
                     {counter}
                   </span>
-                  <button onClick={() => go(1)} disabled={nextOff} aria-label={nextLabel} className="h-12 flex-1 rounded-2xl bg-white/10 text-base font-bold ring-1 ring-white/15 active:bg-white/20 disabled:opacity-35">
+                  <button {...press(() => go(1))} disabled={nextOff} aria-label={nextLabel} className="h-12 flex-1 rounded-2xl bg-white/10 text-base font-bold ring-1 ring-white/15 active:bg-white/20 disabled:opacity-35">
                     {index === n - 1 && loop ? "처음으로 ›" : "다음 ›"}
                   </button>
                 </div>
@@ -561,6 +635,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                         <CloseIcon />
                       </button>
                     </div>
+                    {navTop && railNav}
                     <div
                       data-noswipe
                       className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain [mask-image:linear-gradient(to_bottom,#000_88%,transparent)] [touch-action:pan-x_pan-y]"
@@ -572,14 +647,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                         <RotateIcon /> 세로로 보기
                       </button>
                     )}
-                    <div className="mt-2 flex gap-2">
-                      <button onClick={() => go(-1)} disabled={prevOff} aria-label={prevLabel} className="h-11 flex-1 rounded-xl bg-white/10 font-bold hover:bg-white/20 active:bg-white/20 disabled:opacity-35">
-                        ‹ 이전
-                      </button>
-                      <button onClick={() => go(1)} disabled={nextOff} aria-label={nextLabel} className="h-11 flex-1 rounded-xl bg-white/10 font-bold hover:bg-white/20 active:bg-white/20 disabled:opacity-35">
-                        다음 ›
-                      </button>
-                    </div>
+                    {!navTop && railNav}
                   </div>
                 ) : plan.mode === "compact" ? (
                   <div className="flex h-full flex-col px-2 pb-6 pt-2">
@@ -589,6 +657,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                         <CloseIcon />
                       </button>
                     </div>
+                    {navTop && compactNav}
                     <div className="mt-2">
                       <Chip award={art.award} small />
                       <div className="mt-1.5">
@@ -608,14 +677,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                         세로로 보기
                       </button>
                     )}
-                    <div className="mt-2 flex justify-between">
-                      <button onClick={() => go(-1)} disabled={prevOff} aria-label={prevLabel} className="h-11 w-11 rounded-full bg-white/10 text-xl active:bg-white/20 disabled:opacity-35">
-                        ‹
-                      </button>
-                      <button onClick={() => go(1)} disabled={nextOff} aria-label={nextLabel} className="h-11 w-11 rounded-full bg-white/10 text-xl active:bg-white/20 disabled:opacity-35">
-                        ›
-                      </button>
-                    </div>
+                    {!navTop && compactNav}
                   </div>
                 ) : (
                   <div className="flex h-full flex-col items-center gap-1 pb-5 pt-2">
@@ -627,6 +689,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                       <span className="text-lg font-bold leading-none">i</span>
                       정보
                     </button>
+                    {navTop && slimNav}
                     <div className="flex-1" />
                     {rot && (
                       <button onClick={() => rotate(false)} aria-pressed className="flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-bold active:bg-white/10">
@@ -634,12 +697,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                         세로로
                       </button>
                     )}
-                    <button onClick={() => go(-1)} disabled={prevOff} aria-label={prevLabel} className="flex h-14 w-14 flex-col items-center justify-center rounded-xl text-[11px] font-bold active:bg-white/10 disabled:opacity-35">
-                      <span className="text-xl leading-none">‹</span>이전
-                    </button>
-                    <button onClick={() => go(1)} disabled={nextOff} aria-label={nextLabel} className="flex h-14 w-14 flex-col items-center justify-center rounded-xl text-[11px] font-bold active:bg-white/10 disabled:opacity-35">
-                      <span className="text-xl leading-none">›</span>다음
-                    </button>
+                    {!navTop && slimNav}
                   </div>
                 )}
               </div>
