@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, MotionConfig, animate, motion, useMotionValue } from "framer-motion";
 import { awardColor } from "@/lib/config";
 import { canLoop, closeViewer, moveDetail, useGallery } from "@/lib/gallery";
@@ -113,10 +114,13 @@ export function ArtViewer() {
   const detail = useGallery((s) => s.detail);
   const arts = useGallery((s) => s.arts);
   const art = detail !== null ? arts[detail] : null;
-  return (
+  // 크게 보기는 body 바로 아래에 둔다: 잘라 내는(overflow hidden) 조상 안에서 90° 돌린 화면은
+  // iPhone(사파리·카카오톡)에서 버튼 누르기가 먹지 않는 일이 있어, 널리 쓰는 '가로 고정' 구조(고정 화면 하나만 돌리기)로.
+  return createPortal(
     <MotionConfig reducedMotion="user">
       <AnimatePresence>{art && detail !== null && <Viewer key="viewer" art={art} index={detail} arts={arts} />}</AnimatePresence>
-    </MotionConfig>
+    </MotionConfig>,
+    document.body
   );
 }
 
@@ -337,6 +341,10 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
     animate(dragScale, 1, { type: "spring", stiffness: 500, damping: 40 });
     animate(bgAlpha, 1, { duration: 0.2 });
   };
+  // 넘기는 중 잠금은 시간으로 푼다: 애니메이션이 중간에 끊기면 끝났다는 알림(then)이 오지 않아
+  // 잠금이 영영 풀리지 않고 ‹ › 가 먹지 않게 된다
+  const swap = useRef(0);
+  useEffect(() => () => window.clearTimeout(swap.current), []);
   const go = (d: 1 | -1) => {
     if (busy.current) return;
     const s = useGallery.getState();
@@ -346,12 +354,13 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
       return;
     }
     busy.current = true;
-    animate(dragX, -d * W * 0.6, { duration: 0.16 }).then(() => {
+    animate(dragX, -d * W * 0.6, { duration: 0.16 });
+    swap.current = window.setTimeout(() => {
       moveDetail(d);
       dragX.set(d * W * 0.25);
       animate(dragX, 0, { duration: 0.22, ease: [0.16, 1, 0.3, 1] });
       busy.current = false;
-    });
+    }, 160);
   };
   const onUp = (e: React.PointerEvent) => {
     const s = g.current;
@@ -384,6 +393,8 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
     settle();
   };
   const onCancel = () => {
+    // 밀던 중이었을 때만 되돌린다 (버튼을 누르다 취소된 것까지 넘기는 중인 작품을 끌어오지 않게)
+    if (!g.current) return;
     g.current = null;
     settle();
   };
@@ -427,7 +438,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
       role="dialog"
       aria-modal="true"
       aria-label={`${name} 작품 크게 보기`}
-      className="fixed inset-0 z-50 overflow-hidden text-[#f4f1ea] [overscroll-behavior:contain] [touch-action:none]"
+      className="fixed inset-0 z-50 select-none text-[#f4f1ea] [overscroll-behavior:contain] [touch-action:none]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -543,7 +554,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                 style={{ width: plan.railW }}
               >
                 {plan.mode === "rail" || plan.mode === "desk" ? (
-                  <div className={`flex h-full flex-col py-3 ${plan.mode === "desk" ? "px-6 py-6" : "px-4"} ${rot ? "" : "pr-[max(16px,env(safe-area-inset-right))]"}`}>
+                  <div className={`flex h-full flex-col ${plan.mode === "desk" ? "px-6 py-6" : "px-4 pb-6 pt-3"} ${rot ? "" : "pr-[max(16px,env(safe-area-inset-right))]"}`}>
                     <div className="flex h-11 items-center justify-between">
                       <span className="text-[13px] tabular-nums text-white/60">{counter}</span>
                       <button ref={closeRef} onClick={closeViewer} className={roundBtn} aria-label="닫기">
@@ -571,7 +582,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                     </div>
                   </div>
                 ) : plan.mode === "compact" ? (
-                  <div className="flex h-full flex-col px-2 py-2">
+                  <div className="flex h-full flex-col px-2 pb-6 pt-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs tabular-nums text-white/60">{counter}</span>
                       <button ref={closeRef} onClick={closeViewer} className={roundBtn} aria-label="닫기">
@@ -607,7 +618,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                     </div>
                   </div>
                 ) : (
-                  <div className="flex h-full flex-col items-center gap-1 py-2">
+                  <div className="flex h-full flex-col items-center gap-1 pb-5 pt-2">
                     <button ref={closeRef} onClick={closeViewer} className="flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-bold active:bg-white/10">
                       <CloseIcon />
                       닫기
