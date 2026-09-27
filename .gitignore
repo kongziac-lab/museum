@@ -50,3 +50,6 @@ next-env.d.ts
 /public/artworks/award-*
 /public/exhibition.json
 /public/artworks/background.*
+
+# 배경 모델 작업 폴더 (scripts/scenery)
+/scenery-src

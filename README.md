@@ -1,14 +1,15 @@
 # 한글 이름 꾸미기 대회 · 수상작 3D 전시관
 
-수상작 이미지와 캡션(이름·국적·수상 부문)만 넣으면, 나무가 늘어선 야외 산책로를 걸으며 한 작품씩 감상하는 3D 전시가 만들어집니다.
+수상작 이미지와 캡션(이름·국적·수상 부문)만 넣으면, 계명대학교 캠퍼스를 본뜬 분수 광장을 한 바퀴 돌며 한 작품씩 감상하는 3D 전시가 만들어집니다.
 
 <img src="docs/title.png" width="49%"> <img src="docs/gallery.png" width="49%">
 
-- 입구 문을 지나 산책로를 따라가면 작품이 길 양옆에 **대상 → 최우수상 → 우수상 → 장려상** 순서로 서 있습니다. 부문이 바뀌는 곳에는 표지판이 있습니다.
+- **정문**(흰 열주)을 지나 들어가면 창립 120주년 기념 분수를 가운데 둔 광장이 있고, 둘레로 **동산도서관·본관·채플**이 서 있습니다. 건물 정면은 실제 사진을 입힌 3D 모델입니다.
+- 작품은 분수를 둘러싼 산책로 안쪽에 **대상 → 최우수상 → 우수상 → 장려상** 순서로 서 있어, 어느 작품을 보든 뒤로 분수와 건물이 보입니다. 부문이 바뀌는 곳에는 표지판이 있습니다.
 - **스크롤·화면 밀기·‹ › 버튼·← → 키** 중 무엇으로든 다음 작품 앞까지 걸어가 멈춥니다. 키를 누르고 있을 필요가 없습니다.
 - 아래 **작품 띠**나 **작품 목록**에서 원하는 작품을 누르면 그 작품 앞으로 바로 걸어갑니다.
 - 작품 앞에 서면 캡션 카드(수상 부문·이름·국적·설명)가 뜨고, 작품이나 **크게 보기**를 누르면 원본 이미지를 크게 볼 수 있습니다.
-- 휴대폰 세로 화면에서는 작품이 잘 보이도록 조금 더 뒤에서 봅니다.
+- PC에서는 그림자·접촉면 그늘·빛번짐까지 그리고, 휴대폰에서는 자동으로 가볍게 그립니다.
 
 ---
 
@@ -57,20 +58,18 @@ npm install
 }
 ```
 
-### 배경 사진 (선택) — 계명대 교정 등
+### 배경 360° 사진 (선택)
 
-`수상작/` 폴더에 **`배경.jpg`**를 넣으면 하늘 대신 그 사진이 배경이 됩니다.
+`수상작/` 폴더에 **360° 파노라마 사진**(가로:세로 = 2:1)을 **`배경.jpg`**로 넣으면 기본 공원 하늘 대신 그 사진이 사방 배경이 됩니다(빛은 기본 하늘 그대로). 일반 사진은 쓰지 않습니다.
 
-- **360° 파노라마 사진**(가로:세로 = 2:1, 휴대폰 파노라마·360 카메라로 촬영)이면 사방이 교정으로 둘러싸인 느낌이 납니다. 가장 자연스럽습니다.
-- **일반 사진**이면 산책로 끝(마지막 작품 너머)에 휘어진 배경막으로 세우고, 양옆과 위쪽은 하늘로 흐리게 이어 붙입니다. 세로 사진이면 분수·건물처럼 보여 줄 부분만 가로로 잘라 두면 더 자연스럽습니다.
-- 학교 홍보용 사진을 쓸 때는 사용 권한을 확인해 주세요. 출처 표기가 필요한 사진이면 `전시정보.json`에 적어 두면 첫 화면 아래에 작게 나옵니다.
+- 학교 사진을 쓸 때는 사용 권한을 확인해 주세요. 출처 표기가 필요하면 `전시정보.json`에 적어 두면 첫 화면 아래에 작게 나옵니다.
 
 ```json
 "배경출처": "배경 사진: 찍은 사람 · CC BY-SA 4.0 (Wikimedia Commons)",
 "배경출처링크": "https://commons.wikimedia.org/wiki/File:..."
 ```
 
-> 지금 들어 있는 `배경.jpg`는 Wikimedia Commons의 [계명대학교 창립 120주년 기념 분수대](https://commons.wikimedia.org/wiki/File:120th_Anniversary_Fountain.jpg) 사진(Sumin4467, CC BY-SA 4.0)을 분수 부분만 잘라 쓴 것입니다. 잘라 낸 이 파일도 CC BY-SA 4.0을 따릅니다.
+지금은 건물 사진 출처를 모은 [`public/credits.html`](public/credits.html)로 이어 두었습니다.
 
 > 💡 이미지는 **긴 변 2000px 이하, 한 장 2MB 안팎**이면 휴대폰에서도 빠르게 뜹니다. 4MB가 넘으면 실행할 때 경고가 나옵니다.
 
@@ -97,6 +96,26 @@ npm run dev
 
 수상작을 바꿀 때는 `수상작/` 폴더를 고쳐서 GitHub에 올리기만 하면 Vercel이 자동으로 다시 배포합니다.
 
+## 배경 모델 다시 만들기 (고칠 때만)
+
+분수·나무·건물은 미리 만들어 `public/scenery/`에 넣어 두었으므로, 평소에는 할 일이 없습니다. 모양을 바꿀 때만 아래를 순서대로 실행합니다 ([Blender](https://www.blender.org) 4.2 이상 필요).
+
+| 파일 | 만드는 것 |
+|---|---|
+| `scripts/scenery/gen-trees.mjs` | [ez-tree](https://github.com/dgreenheck/ez-tree)로 나무 8종 모양(OBJ) |
+| `scripts/scenery/prep_facades.py` | 건물 사진의 원근을 바로잡고 하늘을 지운 외벽 텍스처 |
+| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(건물·정문) |
+
+```bash
+W=scenery-src   # 작업 폴더 (저장소에 넣지 않음)
+node scripts/scenery/gen-trees.mjs $W/trees
+python3 scripts/scenery/prep_facades.py $W/kmu $W/facades   # $W/kmu 에 건물 사진 (출처: public/credits.html)
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
+  --python scripts/scenery/build_scenery.py -- --work $W --out public/scenery
+```
+
+하늘(HDRI)·잔디·벽돌·화강암 재질은 [Poly Haven](https://polyhaven.com)(CC0)에서 받아 웹용으로 줄인 것입니다(`public/scenery/env`, `public/scenery/tex`).
+
 ## 조작법
 
 | PC | 휴대폰 |
@@ -109,7 +128,7 @@ npm run dev
 
 ## 참고: 원본 대비 바뀐 점
 
-> 지금 전시 화면은 `src/components/gallery/`(야외 산책로 방식)입니다. 아래는 처음 만든 실내 전시관(`src/components/museum/`) 기준 설명이며, 그 코드는 `/editor`·`/admin`과 함께 남아 있지만 첫 화면에서는 쓰이지 않습니다.
+> 지금 전시 화면은 `src/components/gallery/`(분수 광장 둘레 산책로, 3D 배경은 `scene/`)입니다. 아래는 처음 만든 실내 전시관(`src/components/museum/`) 기준 설명이며, 그 코드는 `/editor`·`/admin`과 함께 남아 있지만 첫 화면에서는 쓰이지 않습니다.
 
 이 프로젝트는 [museum-engine](https://github.com/gecapistrano/museum-engine)(MIT License)을 바탕으로 만들었습니다.
 

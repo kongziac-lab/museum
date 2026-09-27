@@ -270,7 +270,7 @@ function main() {
   // 가장 높은 부문의 첫 작품을 입구 정면(대표 작품)으로
   if (artworks.length > 0) artworks[0].hero = true;
 
-  // 배경 사진 (선택): 수상작/배경.jpg — 360° 파노라마(가로:세로 = 2:1)면 하늘 전체, 아니면 먼 배경막으로 쓴다.
+  // 배경 사진 (선택): 수상작/배경.jpg — 360° 파노라마(가로:세로 = 2:1)면 기본 공원 하늘 대신 그 사진을 사방 배경으로 쓴다.
   let background = null;
   const bgFile = readdirSync(SRC_DIR).find(
     (f) => norm(f).replace(/\.[^.]+$/, "") === BG_BASENAME && VALID_EXT.has(extname(f).toLowerCase())
@@ -286,7 +286,8 @@ function main() {
       height: size?.height ?? 0,
       panorama: aspect > 1.8 && aspect < 2.2,
     };
-    log(`✓ 배경 사진: ${norm(bgFile)} (${background.panorama ? "360° 파노라마" : "일반 사진 — 먼 배경막으로 사용"})`);
+    if (background.panorama) log(`✓ 배경 사진: ${norm(bgFile)} (360° 파노라마)`);
+    else warn(`${norm(bgFile)}은 360° 파노라마(가로:세로 = 2:1)가 아니라서 쓰지 않습니다. 기본 공원 배경을 씁니다.`);
   }
 
   const payload = {

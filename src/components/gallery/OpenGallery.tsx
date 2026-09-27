@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
+import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
 import { buildLayout, goTo, useGallery } from "@/lib/gallery";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
 import { GalleryScene } from "./GalleryScene";
+import { detectQuality, type Quality } from "./scene/common";
 
 /* ───────────────────────── 데이터 ───────────────────────── */
 
@@ -156,10 +158,13 @@ const btn =
 function Intro() {
   const started = useGallery((s) => s.started);
   const loaded = useGallery((s) => s.loaded);
+  const sceneryReady = useGallery((s) => s.sceneryReady);
   const info = useGallery((s) => s.info);
   const count = useGallery((s) => s.arts.length);
   const start = useGallery((s) => s.start);
   const toggleList = useGallery((s) => s.toggleList);
+  const { progress } = useProgress();
+  const ready = loaded && sceneryReady;
   return (
     <AnimatePresence>
       {!started && (
@@ -178,10 +183,10 @@ function Intro() {
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               <button
                 onClick={start}
-                disabled={!loaded || count === 0}
-                className="rounded-full bg-white px-8 py-3.5 text-lg font-bold text-sky-900 shadow-xl transition hover:bg-sky-50 active:scale-95 disabled:opacity-50"
+                disabled={!ready || count === 0}
+                className="min-w-[9.5rem] rounded-full bg-white px-8 py-3.5 text-lg font-bold text-sky-900 shadow-xl transition hover:bg-sky-50 active:scale-95 disabled:opacity-50"
               >
-                {loaded ? "관람 시작" : "준비 중…"}
+                {ready ? "관람 시작" : `준비 중 ${Math.round(progress)}%`}
               </button>
               <button
                 onClick={() => toggleList(true)}
@@ -516,15 +521,24 @@ export function OpenGallery() {
   const layout = useMemo(() => (arts.length ? buildLayout(arts, { portrait }) : null), [arts, portrait]);
   const rootRef = useRef<HTMLDivElement>(null);
   useWalkInput(rootRef);
+  // 처음 한 번만 정한다 (휴대폰·저사양은 가볍게)
+  const [quality] = useState<Quality>(detectQuality);
+  const high = quality === "high";
 
   return (
-    <div ref={rootRef} id="museum-root" className="bg-sky-100">
+    <div ref={rootRef} id="museum-root" className="bg-[#c9d3d6]">
       <Canvas
-        dpr={[1, 1.75]}
-        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.0 }}
-        camera={{ fov: portrait ? 64 : 55, near: 0.1, far: 1200, position: [0, 1.62, 6] }}
+        shadows={{ type: THREE.PCFSoftShadowMap }}
+        dpr={[1, 1.5]}
+        // PC는 후처리(Effects)에서 톤 매핑을 하므로 렌더러는 그대로 둔다
+        gl={{ antialias: !high, powerPreference: "high-performance" }}
+        onCreated={({ gl }) => {
+          gl.toneMapping = high ? THREE.NoToneMapping : THREE.NeutralToneMapping;
+          gl.toneMappingExposure = 1.0;
+        }}
+        camera={{ fov: portrait ? 64 : 55, near: 0.1, far: 1500, position: [0, 1.62, 40] }}
       >
-        {layout && <GalleryScene layout={layout} />}
+        {layout && <GalleryScene layout={layout} quality={quality} />}
       </Canvas>
       <Intro />
       <Hud />
