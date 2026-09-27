@@ -193,6 +193,17 @@ function Intro() {
             </div>
             <p className="mt-6 text-sm text-white/80">스크롤하거나 화면을 밀어서 한 작품씩 걸어가며 볼 수 있어요</p>
           </div>
+          {info.배경출처 && (
+            <p className="absolute bottom-3 left-1/2 w-max max-w-[92vw] -translate-x-1/2 rounded-xl bg-black/35 px-3 py-1 text-center text-[11px] text-white/90 backdrop-blur-sm">
+              {info.배경출처링크 ? (
+                <a href={info.배경출처링크} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+                  {info.배경출처}
+                </a>
+              ) : (
+                info.배경출처
+              )}
+            </p>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

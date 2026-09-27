@@ -84,7 +84,7 @@ function fitText(g: CanvasRenderingContext2D, text: string, weight: number, max:
 
 /* ───────────────────────── 하늘·땅 ───────────────────────── */
 
-function Backdrop({ bg }: { bg: ExhibitionBackground | null }) {
+function Backdrop({ bg, layout }: { bg: ExhibitionBackground | null; layout: GalleryLayout }) {
   const tex = useLazyTexture(bg?.src ?? "", Boolean(bg));
   if (bg && tex && bg.panorama) {
     return (
@@ -97,26 +97,74 @@ function Backdrop({ bg }: { bg: ExhibitionBackground | null }) {
   return (
     <>
       <Sky distance={4000} sunPosition={[80, 40, -60]} turbidity={4} rayleigh={0.8} mieCoefficient={0.004} mieDirectionalG={0.8} />
-      {bg && tex && <BackdropPhoto tex={tex} bg={bg} />}
+      {bg && tex && <BackdropPhoto tex={tex} bg={bg} layout={layout} />}
     </>
   );
 }
 
-/** 일반 사진: 산책로 먼 끝을 둘러싸는 휜 배경막. */
-function BackdropPhoto({ tex, bg }: { tex: THREE.Texture; bg: ExhibitionBackground }) {
+/** 배경막 가장자리(양옆·위)를 투명하게 흐려 하늘과 이어지게 하는 알파 맵. */
+function useFeatherMask() {
+  const tex = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 256;
+    const g = c.getContext("2d")!;
+    const side = g.createLinearGradient(0, 0, 256, 0);
+    side.addColorStop(0, "#000");
+    side.addColorStop(0.08, "#555");
+    side.addColorStop(0.22, "#fff");
+    side.addColorStop(0.78, "#fff");
+    side.addColorStop(0.92, "#555");
+    side.addColorStop(1, "#000");
+    g.fillStyle = side;
+    g.fillRect(0, 0, 256, 256);
+    // 위쪽 하늘 부분은 장면의 하늘로 녹아들게
+    g.globalCompositeOperation = "multiply";
+    const top = g.createLinearGradient(0, 0, 0, 256);
+    top.addColorStop(0, "#000");
+    top.addColorStop(0.3, "#fff");
+    top.addColorStop(1, "#fff");
+    g.fillStyle = top;
+    g.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(c);
+  }, []);
+  useEffect(() => () => tex.dispose(), [tex]);
+  return tex;
+}
+
+/**
+ * 일반 사진: 산책로 끝 너머에 선 휜 배경막.
+ * 마지막 관람 위치를 중심으로 휘어서 끝에 다가갈수록 사진이 바르게 보인다.
+ * 세로·정사각 사진이 하늘 높이 치솟지 않도록 높이를 제한하고, 폭은 사진 비율을 따른다.
+ */
+function BackdropPhoto({ tex, bg, layout }: { tex: THREE.Texture; bg: ExhibitionBackground; layout: GalleryLayout }) {
+  const mask = useFeatherMask();
   const aspect = bg.width && bg.height ? bg.width / bg.height : 1.6;
-  const radius = 170;
-  const arc = Math.PI * 0.9;
-  const height = (radius * arc) / aspect;
+  const last = layout.stops[layout.stops.length - 1];
+  const end = layout.at(last ? last.viewDist : 40).p;
+  const radius = 80;
+  const maxArc = Math.PI * 0.9;
+  const height = Math.min(44, (radius * maxArc) / aspect);
+  const arc = (height * aspect) / radius;
   return (
-    <mesh position={[0, height / 2 - 12, -40]}>
+    // 사진 아래 끝(잔디)이 땅에 살짝 묻히게
+    <mesh position={[end.x, height / 2 - 0.5, end.z]}>
       <cylinderGeometry args={[radius, radius, height, 64, 1, true, Math.PI - arc / 2, arc]} />
-      <meshBasicMaterial map={tex} side={THREE.BackSide} fog={false} toneMapped={false} />
+      <meshBasicMaterial
+        map={tex}
+        alphaMap={mask}
+        transparent
+        depthWrite={false}
+        side={THREE.BackSide}
+        fog={false}
+        toneMapped={false}
+      />
     </mesh>
   );
 }
 
-function Ground() {
+function Ground({ layout }: { layout: GalleryLayout }) {
+  // 길이 길어져도 산책로 끝의 배경막 아래까지 땅이 이어지게
+  const size = Math.max(800, layout.length * 2 + 400);
   const tex = useMemo(() => {
     const c = document.createElement("canvas");
     c.width = c.height = 256;
@@ -132,13 +180,13 @@ function Ground() {
     }
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(120, 120);
+    t.repeat.set(size * 0.15, size * 0.15);
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
-  }, []);
+  }, [size]);
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -200]}>
-      <planeGeometry args={[800, 800]} />
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -layout.length / 2]}>
+      <planeGeometry args={[size, size]} />
       <meshStandardMaterial map={tex} roughness={1} />
     </mesh>
   );
@@ -226,10 +274,15 @@ function Trees({ layout }: { layout: GalleryLayout }) {
       c.setHSL(0.26 + t.hue * 0.08, 0.42, 0.3 + t.hue * 0.12);
       leafRef.current?.setColorAt(i, c);
     });
-    if (trunkRef.current) trunkRef.current.instanceMatrix.needsUpdate = true;
+    // 화면 밖 판정 범위를 나무 전체 위치로 다시 계산 (안 하면 입구가 시야를 벗어날 때 나무가 모두 사라진다)
+    if (trunkRef.current) {
+      trunkRef.current.instanceMatrix.needsUpdate = true;
+      trunkRef.current.computeBoundingSphere();
+    }
     if (leafRef.current) {
       leafRef.current.instanceMatrix.needsUpdate = true;
       if (leafRef.current.instanceColor) leafRef.current.instanceColor.needsUpdate = true;
+      leafRef.current.computeBoundingSphere();
     }
   }, [trees]);
 
@@ -479,8 +532,8 @@ export function GalleryScene({ layout }: { layout: GalleryLayout }) {
       <directionalLight position={[40, 60, 20]} intensity={1.6} color="#fff4e0" />
       <ambientLight intensity={0.25} />
 
-      <Backdrop bg={background} />
-      <Ground />
+      <Backdrop bg={background} layout={layout} />
+      <Ground layout={layout} />
       <PathRibbon layout={layout} />
       <Trees layout={layout} />
       <EntranceGate layout={layout} />

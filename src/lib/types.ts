@@ -58,6 +58,9 @@ export interface ExhibitionInfo {
   안내제목?: string;
   안내문?: string;
   수상부문순서?: string[];
+  /** 배경 사진 출처 표기 (첫 화면 아래에 작게) */
+  배경출처?: string;
+  배경출처링크?: string;
 }
 
 /** Per-artwork spotlight configuration. */
