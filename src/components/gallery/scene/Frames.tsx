@@ -194,7 +194,7 @@ function frameMaterials(): Mats {
     hanji: new THREE.MeshStandardMaterial({ map: hanjiTexture(), roughness: 0.95 }),
     // 흑칠 + 금선
     lacquer: new THREE.MeshPhysicalMaterial({ color: "#0e0d0d", roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.06 }),
-    ivory: new THREE.MeshStandardMaterial({ map: linen, color: "#f7f0de", roughness: 0.93 }),
+    ivory: new THREE.MeshStandardMaterial({ map: linen, color: "#fffdf7", roughness: 0.93 }),
   };
   return mats;
 }
@@ -336,10 +336,10 @@ export const SPECS: Record<FrameStyle, Spec> = {
   },
   // 가는 황동 테 + 그림자 틈 + 짙은 판 위에 떠 있는 작품 (현대 미술관)
   brass: {
-    rim: 0.045,
+    rim: 0.052,
     layers: [
-      { inset: 0, width: 0.018, depth: 0.08, bevel: 0.004, mat: "brass" },
-      { inset: 0.018, width: 0.027, depth: 0.03, bevel: 0.002, mat: "charcoal" }, // 그림자 틈
+      { inset: 0, width: 0.03, depth: 0.08, bevel: 0.005, mat: "brass" },
+      { inset: 0.03, width: 0.022, depth: 0.03, bevel: 0.002, mat: "charcoal" }, // 그림자 틈
     ],
     pad: 0.1,
     padMat: "charcoal",
@@ -372,9 +372,9 @@ export const SPECS: Record<FrameStyle, Spec> = {
     rim: 0.15,
     layers: [
       { inset: 0, width: 0.11, depth: 0.08, bevel: 0.024, mat: "lacquer" },
-      { inset: 0.016, width: 0.01, depth: 0.09, bevel: 0.004, mat: "gold" },
+      { inset: 0.016, width: 0.02, depth: 0.09, bevel: 0.006, mat: "gold" },
       { inset: 0.11, width: 0.04, depth: 0.056, bevel: 0.01, mat: "lacquer" },
-      { inset: 0.14, width: 0.01, depth: 0.062, bevel: 0.004, mat: "gold" },
+      { inset: 0.132, width: 0.018, depth: 0.062, bevel: 0.005, mat: "gold" },
     ],
     pad: 0.17,
     padMat: "ivory",
