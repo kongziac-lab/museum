@@ -61,6 +61,26 @@ export interface ExhibitionInfo {
   /** 배경 사진 출처 표기 (첫 화면 아래에 작게) */
   배경출처?: string;
   배경출처링크?: string;
+  /** 첫 화면에 크게 기리는 기념 (한 개면 한 판, 두 개면 두 판으로 나눈다) */
+  기념?: Commemoration[];
+  /** 첫 화면 오른쪽 위 날짜 (예: "2026. 10. 9.") */
+  기념일?: string;
+}
+
+/** 기념 한 가지 — 예: 훈민정음 반포 580돌 */
+export interface Commemoration {
+  /** 몇 돌 (크게 쓰는 숫자) */
+  햇수: number | string;
+  /** 기본 "돌" */
+  단위?: string;
+  /** 예: "훈민정음 반포" */
+  이름: string;
+  /** 영문 작은 글씨 (예: "HUNMINJEONGEUM · 1446") */
+  영문?: string;
+  /** 예: "1446 — 2026" */
+  기간?: string;
+  /** 한 줄 설명 */
+  설명?: string;
 }
 
 /** Per-artwork spotlight configuration. */

@@ -127,3 +127,63 @@ canvas {
     scroll-behavior: auto !important;
   }
 }
+
+/* ───────── 첫 화면 (한글날 기념 플래시) ───────── */
+.sp-serif {
+  font-family: "Noto Serif KR", var(--font-display);
+}
+.sp-mono {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@keyframes sp-drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes sp-drift-r {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+@keyframes sp-char-up {
+  from { transform: translateY(110%); }
+  to { transform: translateY(0); }
+}
+@keyframes sp-fade-up {
+  from { transform: translateY(22px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes sp-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes sp-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+.sp-row {
+  display: flex;
+  width: max-content;
+  white-space: nowrap;
+  will-change: transform;
+}
+.sp-in {
+  animation: sp-fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) var(--d, 0s) both;
+}
+.sp-char {
+  display: inline-block;
+  animation: sp-char-up 0.9s cubic-bezier(0.22, 1, 0.36, 1) var(--d, 0s) both;
+}
+.sp-spin {
+  animation: sp-spin 26s linear infinite;
+}
+.sp-blink {
+  animation: sp-blink 1.2s ease infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-row,
+  .sp-spin {
+    animation: none !important;
+  }
+  .sp-in,
+  .sp-char {
+    animation-duration: 0.01s;
+  }
+}
