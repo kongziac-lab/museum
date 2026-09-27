@@ -15,8 +15,8 @@ import { ArtFrame, FrameLegs, artZ, frameOuter, pickFrameStyle, SPECS } from "./
 const frameMat = new THREE.MeshStandardMaterial({ color: "#26282b", metalness: 0.6, roughness: 0.38 });
 const steelMat = new THREE.MeshStandardMaterial({ color: "#8d9095", metalness: 0.85, roughness: 0.32 });
 
-/** 액자 모양 (미리보기는 ?frame=) */
-const FRAME = pickFrameStyle("basic");
+/** 액자 모양: 월넛 원목 + 금박 (다른 시안은 주소 뒤 ?frame=brass · pyogu · lacquer · basic) */
+const FRAME = pickFrameStyle("walnut");
 
 /* ───────────────────────── 작품 스탠드 ───────────────────────── */
 
