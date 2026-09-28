@@ -141,6 +141,16 @@ npx @gltf-transform/cli webp $W/campus_new.glb $W/campus_webp.glb --quality 88
 npx @gltf-transform/cli draco $W/campus_webp.glb public/scenery/campus.glb
 ```
 
+광장 양옆 느티나무(넓고 빽빽한 수관)는 `zelkova.py`로 `trees.glb`에 더합니다(`zelkova_a`·`zelkova_b`, 잎 뭉치 텍스처는 `zelkova_leaf.py`). 광장 가장자리 한 줄은 끝까지, 작품 원 옆은 안쪽에 한 줄 더 심고 그 사이에 벤치를 둡니다(`sitePlan.ts`의 `gratedTrees`).
+
+```bash
+python3 scripts/scenery/zelkova_leaf.py $W/zelkova_leaves.png
+npx @gltf-transform/cli copy public/scenery/trees.glb $W/trees_raw.glb
+python3 scripts/scenery/zelkova.py -- --src $W/trees_raw.glb --leaf $W/zelkova_leaves.png --out $W/trees_new.glb
+npx @gltf-transform/cli webp $W/trees_new.glb $W/trees_webp.glb --quality 88
+npx @gltf-transform/cli draco $W/trees_webp.glb public/scenery/trees.glb
+```
+
 `photo_update.py`는 Blender 4.2에서 돌립니다(`pip install bpy==4.2.0` 파이썬 모듈도 됩니다). 이미 고친 `campus.glb`에 다시 돌리면 조형물이 두 벌 생기니, 사진으로 고치기 전 파일(`git show 5bcbb68:public/scenery/campus.glb`)에서 시작하세요.
 
 하늘(HDRI, 땅 없는 하늘만)과 잔디 재질은 [Poly Haven](https://polyhaven.com)(CC0)에서 받아 웹용으로 줄인 것입니다(`public/scenery/env`, `public/scenery/tex`). 광장 배치는 `src/components/gallery/scene/sitePlan.ts`에 모여 있습니다.

@@ -145,13 +145,19 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     { x: 6, z: -(R + 36), w: 5, d: 2.4, fill: "grass" },
   ];
 
+  // 광장 양옆 느티나무 숲 (사진 IMG_4006 · 4015): 가장자리 한 줄은 광장 끝까지, 작품 원 옆은 안쪽에 한 줄 더 엇갈려 심어
+  // 수관이 이어지게. 안쪽 줄도 작품 앞 관람 자리(원 바깥 약 18 m)보다 충분히 바깥(x = ±(plazaX − 9))이다.
   const gratedTrees: [number, number][] = [];
   const benches: [number, number][] = [];
   const edge = plazaX - 3;
+  const inner = plazaX - 9;
   for (let z = plazaS - 4; z > plazaN + 6; z -= 9) {
-    if (Math.abs(z) < R + 4) continue; // 작품 원 옆은 비운다
     gratedTrees.push([-edge, z], [edge, z]);
-    if (Math.abs(z - 4.5) >= R + 4 && z - 4.5 > plazaN + 6) benches.push([-edge - 0.4, z - 4.5], [edge + 0.4, z - 4.5]);
+    const zb = z - 4.5;
+    if (zb <= plazaN + 6) continue;
+    // 가장자리 나무 사이, 낮은 벽 앞에 광장을 보고 앉는 벤치 (사진처럼 앞에 안쪽 줄 나무)
+    benches.push([-edge - 0.6, zb], [edge + 0.6, zb]);
+    if (Math.abs(zb) < R + 22) gratedTrees.push([-inner, zb], [inner, zb]);
   }
 
   // 조형물 자리 — 사진의 GPS(분수 기준 방위·거리)에 맞추되, 대로처럼 줄인 곳은 비율대로

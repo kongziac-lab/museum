@@ -8,7 +8,7 @@ import { SCENERY, rng, type Quality } from "./common";
 import { blockedBySite, groundHeight, type SitePlan } from "./sitePlan";
 
 /**
- * 나무 (ez-tree로 모양을 만들고 Blender에서 다듬은 trees.glb).
+ * 나무 (ez-tree로 모양을 만들고 Blender에서 다듬은 trees.glb, 광장 느티나무는 zelkova.py).
  * 종류마다 나무껍질·잎을 인스턴싱해서 백여 그루도 가볍게 그린다.
  */
 
@@ -35,8 +35,8 @@ function placeTrees(plan: SitePlan, quality: Quality) {
     return BIG[0];
   };
 
-  // 광장 양옆 격자 틀 느티나무
-  plan.gratedTrees.forEach(([x, z], i) => put(i % 3 === 0 ? "ash_a" : i % 2 ? "oak_a" : "oak_b", x, z, 1.15 + r() * 0.15));
+  // 광장 양옆 격자 틀 느티나무 (Blender 로 만든 빽빽한 수관, scripts/scenery/zelkova.py)
+  plan.gratedTrees.forEach(([x, z], i) => put(i % 2 ? "zelkova_a" : "zelkova_b", x, z, 0.95 + r() * 0.15, 4));
   // 광장 남쪽 모서리 은행나무 (사진)
   for (const s of [-1, 1]) put("aspen_a", s * (plan.plazaX + 4), plan.plazaS - 6, 0.95);
   // 대로 가로수
