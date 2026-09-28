@@ -9,8 +9,9 @@ import type { SitePlan } from "./sitePlan";
 
 /**
  * 계명대학교 건물들 (scripts/scenery/build_scenery.py → campus.glb): 정문 · 동산도서관 · 언덕 위 본관 · 대로 옆 건물.
- * 도서관·본관 정면과 벽 무늬는 실제 사진(Wikimedia Commons, 출처: /credits.html)을 입힌 면이라
+ * 도서관 정면·옆벽은 2026-09-28 에 찍은 사진, 본관 등은 Wikimedia Commons 사진(출처: /credits.html)을 입힌 면이라
  * 조명 없이 사진 그대로 그리고, 정문·지붕 등 모델링한 부분은 장면 빛을 받는다.
+ * 조형물(prop_*: 정문 앞 책 표석, 비석, 계명인 상, 시비, 가로등, 벤치)은 scripts/scenery/photo_update.py 로 만들었다.
  */
 export function Campus({ site }: { site: SitePlan }) {
   const gltf = useGLTF(SCENERY.campus, SCENERY.draco);
@@ -50,14 +51,83 @@ export function Campus({ site }: { site: SitePlan }) {
     });
   }, [gltf, plan]);
 
+  // 조형물: 같은 모델을 여러 자리에 복제 (그림자 받기·드리우기)
+  const props = useMemo(
+    () =>
+      site.props.map((p) => {
+        const src = gltf.scene.getObjectByName(p.node);
+        if (!src) return null;
+        const obj = src.clone(true);
+        obj.position.set(p.x, p.y ?? 0, p.z);
+        obj.rotation.set(0, p.rot, 0);
+        obj.scale.setScalar(p.scale ?? 1);
+        obj.traverse((o) => {
+          if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true;
+        });
+        return obj;
+      }),
+    [gltf, site.props]
+  );
+
   const gate = nodes[plan.findIndex((p) => p.node === "bld_gate")];
   const textAnchor = useMemo(() => gate?.getObjectByName("gate_text") ?? null, [gate]);
+  const sign = props[site.props.findIndex((p) => p.node === "prop_gate_sign")];
+  const signKo = useMemo(() => sign?.getObjectByName("sign_text_ko") ?? null, [sign]);
+  const signEn = useMemo(() => sign?.getObjectByName("sign_text_en") ?? null, [sign]);
 
   return (
     <group>
       {nodes.map((o, i) => (o ? <primitive key={`${plan[i].node}-${i}`} object={o} /> : null))}
+      {props.map((o, i) => (o ? <primitive key={`${site.props[i].node}-p${i}`} object={o} /> : null))}
       {textAnchor && <GateText anchor={textAnchor} />}
+      {signKo && <SignText anchor={signKo} text="계명대학교" w={4.3} h={0.62} spacing={0.42} />}
+      {signEn && <SignText anchor={signEn} text="KEIMYUNG UNIVERSITY" w={4.6} h={0.5} spacing={0.06} />}
     </group>
+  );
+}
+
+/** 정문 앞 책 표석의 금색 글자 (책등 앞면, 앵커 = 책등 가운데 1cm 앞) */
+function SignText({ anchor, text, w, h, spacing }: { anchor: THREE.Object3D; text: string; w: number; h: number; spacing: number }) {
+  const W = 2048;
+  const H = Math.round((W * h) / w);
+  const tex = useCanvasTexture(
+    W,
+    H,
+    (g) => {
+      const size = H * 0.78;
+      g.font = `900 ${size}px "Noto Serif KR", ${FONT}`;
+      g.textBaseline = "middle";
+      const chars = [...text];
+      const gap = size * spacing;
+      const widths = chars.map((c) => g.measureText(c).width);
+      const total = widths.reduce((a, b) => a + b, 0) + gap * (chars.length - 1);
+      const scale = Math.min(1, (W * 0.96) / total);
+      g.save();
+      g.translate(W / 2, H / 2);
+      g.scale(scale, 1);
+      // 금박: 위는 밝고 아래는 짙은 금, 가는 그림자로 새긴 느낌
+      const grad = g.createLinearGradient(0, -size / 2, 0, size / 2);
+      grad.addColorStop(0, "#f3d98a");
+      grad.addColorStop(0.5, "#c99a3a");
+      grad.addColorStop(1, "#8a6420");
+      let x = -total / 2;
+      chars.forEach((c, i) => {
+        g.fillStyle = "rgba(0,0,0,0.55)";
+        g.fillText(c, x + 3, 4);
+        g.fillStyle = grad;
+        g.fillText(c, x, 0);
+        x += widths[i] + gap;
+      });
+      g.restore();
+    },
+    [text, spacing]
+  );
+  return createPortal(
+    <mesh>
+      <planeGeometry args={[w, h]} />
+      <meshStandardMaterial map={tex} transparent metalness={0.55} roughness={0.35} depthWrite={false} polygonOffset polygonOffsetFactor={-2} />
+    </mesh>,
+    anchor
   );
 }
 

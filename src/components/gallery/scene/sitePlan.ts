@@ -41,6 +41,17 @@ export interface Planter {
   rock?: boolean;
 }
 
+/** 조형물 (campus.glb 의 prop_* 를 복제해 세운다) */
+export interface Prop {
+  node: string;
+  x: number;
+  y?: number;
+  z: number;
+  /** Y축 회전 (모델 정면 +Z 가 향하는 쪽) */
+  rot: number;
+  scale?: number;
+}
+
 export interface SitePlan {
   R: number;
   /** 광장 반폭, 남쪽 끝, 북쪽 끝 */
@@ -61,8 +72,10 @@ export interface SitePlan {
   gratedTrees: [number, number][];
   /** 흰 화강암 계단 띠 z 위치 */
   steps: number[];
-  /** 비석 받침 */
+  /** 비석 무리 (prop_steles) 자리 */
   steles: { x: number; z: number };
+  /** 사진(2026-09-28)으로 만든 조형물: 정문 앞 책 표석, 비석, 계명인 상, 시비, 가로등, 벤치 */
+  props: Prop[];
   /** 산 중턱 건물 터: 땅을 평평하게 고르고(높이 h), 둘레는 잔디 */
   pads: Pad[];
 }
@@ -116,7 +129,7 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
 
   const planters: Planter[] = [
     // 남쪽: 가운데 둥근 향나무·표석, 양옆 네모 화단과 둥근 향나무
-    { x: 0, z: R + 12, w: 3.2, d: 3.2, round: true, fill: "ball", rock: true },
+    { x: 0, z: R + 12, w: 3.4, d: 3.4, round: true, fill: "grass" }, // 계명인 상 (props)
     { x: -9, z: R + 29, w: 1.8, d: 1.8, round: true, fill: "ball" },
     { x: 9, z: R + 29, w: 1.8, d: 1.8, round: true, fill: "ball" },
     { x: -14, z: R + 17, w: 6, d: 2.6, fill: "hedge" },
@@ -133,11 +146,33 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
   ];
 
   const gratedTrees: [number, number][] = [];
+  const benches: [number, number][] = [];
   const edge = plazaX - 3;
   for (let z = plazaS - 4; z > plazaN + 6; z -= 9) {
     if (Math.abs(z) < R + 4) continue; // 작품 원 옆은 비운다
     gratedTrees.push([-edge, z], [edge, z]);
+    if (Math.abs(z - 4.5) >= R + 4 && z - 4.5 > plazaN + 6) benches.push([-edge - 0.4, z - 4.5], [edge + 0.4, z - 4.5]);
   }
+
+  // 조형물 자리 — 사진의 GPS(분수 기준 방위·거리)에 맞추되, 대로처럼 줄인 곳은 비율대로
+  const WALL_H = 0.55; // Planters 의 화단 벽 높이
+  const props: Prop[] = [
+    // 정문 남쪽 가운데 화단(서쪽 잔디 띠)의 책 표석 — 입구 카메라 쪽으로 조금 돌린다
+    { node: "prop_gate_sign", x: -4.6, z: gateZ + 14, rot: 0.3 },
+    // 비석 무리 (도서관 서쪽 앞), 책 모양 비석 (동쪽 앞)
+    { node: "prop_steles", x: -14, z: -(R + 16), rot: 0 },
+    { node: "prop_book_stone", x: 13, z: -(R + 15), rot: -0.15 },
+    // 남쪽 반송 화단 옆 방패 모양 시비, 광장 남쪽 가운데 둥근 화단의 계명인 상
+    { node: "prop_shield_stone", x: -11, z: R + 9, rot: 0.35 },
+    { node: "prop_keimyung_rock", x: 0, y: WALL_H + 0.05, z: R + 12, rot: 0 },
+  ];
+  for (const [x, z] of benches) props.push({ node: "prop_bench", x, z, rot: x < 0 ? Math.PI / 2 : -Math.PI / 2 });
+  // 구리빛 가로등: 광장 둘레 (팔이 광장 안쪽을 보게)
+  const lampX = plazaX - 6;
+  for (const z of [R + 22, R + 2, -(R + 4), -(R + 26)]) {
+    props.push({ node: "prop_lamp", x: -lampX, z, rot: Math.PI / 2 }, { node: "prop_lamp", x: lampX, z, rot: -Math.PI / 2 });
+  }
+  props.push({ node: "prop_lamp", x: -5, z: -(R + 40), rot: Math.PI / 2 }, { node: "prop_lamp", x: 5, z: -(R + 40), rot: -Math.PI / 2 });
 
   const plan: SitePlan = {
     R,
@@ -154,7 +189,8 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     planters,
     gratedTrees,
     steps: [R + 22, R + 22.6, R + 23.2],
-    steles: { x: -13, z: -(R + 16) },
+    steles: { x: -14, z: -(R + 16) },
+    props,
     pads: [],
   };
   // 비탈 위 건물 터를 고르고 그 높이에 세운다 (채플 모델은 원점이 가운데가 아니라서 터 중심을 옮긴다)

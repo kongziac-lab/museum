@@ -124,8 +124,6 @@ export function Planters({ plan, mats }: { plan: SitePlan; mats: SiteMaterials }
       if (p.fill === "balls") for (const dz of [-3.2, 0, 3.2]) put(ball, p.x, top, p.z + dz, 1.05, rot + dz);
       if (p.rock) put(rock, p.x + (p.round ? p.w * 0.55 : p.w * 0.32), top, p.z + (p.round ? 0.2 : 0), 1.1, 0.4 + rot);
     }
-    // 비석 무리 옆 큰 자연석
-    put(rock, plan.steles.x + 5.2, 0, plan.steles.z + 0.6, 1.5, 0.3);
     return out;
   }, [gltf, plan]);
 

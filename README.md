@@ -128,6 +128,21 @@ python3 scripts/scenery/gen_chapel.py $W/facades
   --python scripts/scenery/build_scenery.py -- --work $W --out public/scenery
 ```
 
+### 사진으로 다듬기 (2026-09-28 촬영)
+
+`reference-media` 브랜치의 `public/img`(현장 사진 29장·영상 3개)를 보고 `campus.glb`를 한 번 더 고쳤습니다. 동산도서관 정면·옆벽을 새 사진으로 바꾸고(원근 보정·지나가는 사람과 하늘 지우기), 정문 앞 **책 두 권 표석**(금색 ‘계명대학교 / KEIMYUNG UNIVERSITY’), 도서관 앞 **비석 무리**·**책 모양 비석**, 남쪽 화단의 **계명인 상**, **방패 모양 시비**, 구리빛 **가로등**, **벤치**를 Blender로 새로 만들었습니다. 자리는 `sitePlan.ts`의 `props`입니다.
+
+```bash
+W=scenery-src
+python3 scripts/scenery/prep_photo_textures.py <사진 폴더> $W NotoSerifKR-700.ttf   # 텍스처
+npx @gltf-transform/cli copy public/scenery/campus.glb $W/campus_raw.glb           # Draco 풀기
+python3 scripts/scenery/photo_update.py -- --src $W/campus_raw.glb --tex $W --out $W/campus_new.glb
+npx @gltf-transform/cli webp $W/campus_new.glb $W/campus_webp.glb --quality 88
+npx @gltf-transform/cli draco $W/campus_webp.glb public/scenery/campus.glb
+```
+
+`photo_update.py`는 Blender 4.2에서 돌립니다(`pip install bpy==4.2.0` 파이썬 모듈도 됩니다). 이미 고친 `campus.glb`에 다시 돌리면 조형물이 두 벌 생기니, 사진으로 고치기 전 파일(`git show 5bcbb68:public/scenery/campus.glb`)에서 시작하세요.
+
 하늘(HDRI, 땅 없는 하늘만)과 잔디 재질은 [Poly Haven](https://polyhaven.com)(CC0)에서 받아 웹용으로 줄인 것입니다(`public/scenery/env`, `public/scenery/tex`). 광장 배치는 `src/components/gallery/scene/sitePlan.ts`에 모여 있습니다.
 
 ## 조작법

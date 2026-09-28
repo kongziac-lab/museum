@@ -184,19 +184,7 @@ export function Site({ plan, mats }: { plan: SitePlan; mats: SiteMaterials }) {
       grate.push(rect(x - 0.8, x + 0.8, z - 0.8, z + 0.8, 0.055));
     }
 
-    // 비석 받침 + 비석 넷 (영상 34초·사진)
-    const { x: sx, z: sz } = plan.steles;
-    granite.push(slab(sx, sz, 8, 4.4, 0, 0.35), slab(sx, sz, 8.6, 5, 0, 0.12));
-    const stones: [number, number, number, number][] = [
-      [-2.8, 0.9, 1.9, 0.26],
-      [-1.2, 1.0, 2.3, 0.28],
-      [0.6, 1.1, 2.6, 0.3],
-      [2.5, 0.9, 1.8, 0.26],
-    ];
-    for (const [dx, w, h, t] of stones) {
-      granite.push(slab(sx + dx, sz, w + 0.3, t + 0.3, 0.35, 0.3));
-      dark.push(slab(sx + dx, sz, w, t, 0.65, h));
-    }
+    // 비석 무리는 조형물(prop_steles, campus.glb)로 세운다
 
     // 대로: 차도(아스팔트) · 가운데 보행로와 화단 · 보도
     const z0 = plazaS;
@@ -208,7 +196,13 @@ export function Site({ plan, mats }: { plan: SitePlan; mats: SiteMaterials }) {
     for (const s of [-1, 1]) {
       granite.push(slab(s * medianX, (z0 + 12 + roadS) / 2, 0.3, roadS - z0 - 12, 0, 0.15));
       granite.push(slab(s * 1.6, (z0 + 12 + roadS) / 2, 0.22, roadS - z0 - 12, 0, 0.1));
-      hedge.push(projectUV(new THREE.BoxGeometry(1.1, 0.7, roadS - z0 - 16).translate(s * 4.6, 0.35, (z0 + 14 + roadS) / 2)));
+      // 가운데 화단 산울타리 — 서쪽은 정문 앞 책 표석 자리(gateZ + 14 ± 3.5)를 비운다
+      const cuts = s < 0 ? [[plan.gateZ + 10.5, plan.gateZ + 17.5]] : [];
+      let from = z0 + 14;
+      for (const [c0, c1] of [...cuts, [roadS - 2, roadS - 2]]) {
+        if (c0 > from) hedge.push(projectUV(new THREE.BoxGeometry(1.1, 0.7, c0 - from).translate(s * 4.6, 0.35, (from + c0) / 2)));
+        from = c1;
+      }
       brick.push(rect(s > 0 ? roadX : -walkX, s > 0 ? walkX : -roadX, z0 + 12, roadS, 0.013));
       granite.push(slab(s * roadX, (z0 + 12 + roadS) / 2, 0.3, roadS - z0 - 12, 0, 0.14));
     }
