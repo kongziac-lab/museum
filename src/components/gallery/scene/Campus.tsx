@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -80,14 +80,25 @@ export function Campus({ site }: { site: SitePlan }) {
       {nodes.map((o, i) => (o ? <primitive key={`${plan[i].node}-${i}`} object={o} /> : null))}
       {props.map((o, i) => (o ? <primitive key={`${site.props[i].node}-p${i}`} object={o} /> : null))}
       {textAnchor && <GateText anchor={textAnchor} />}
-      {signKo && <SignText anchor={signKo} text="계명대학교" w={4.3} h={0.62} spacing={0.42} />}
-      {signEn && <SignText anchor={signEn} text="KEIMYUNG UNIVERSITY" w={4.6} h={0.5} spacing={0.06} />}
+      {signKo && <SignText anchor={signKo} text="계명대학교" font={`800 SIZE "Nanum Gothic"`} w={4.3} h={0.62} spacing={0.42} />}
+      {signEn && <SignText anchor={signEn} text="KEIMYUNG UNIVERSITY" font={`400 SIZE "Uncial Antiqua"`} w={4.6} h={0.5} spacing={0.02} />}
     </group>
   );
 }
 
-/** 정문 앞 책 표석의 금색 글자 (책등 앞면, 앵커 = 책등 가운데 1cm 앞) */
-function SignText({ anchor, text, w, h, spacing }: { anchor: THREE.Object3D; text: string; w: number; h: number; spacing: number }) {
+/**
+ * 정문 앞 책 표석의 금색 글자 (책등 앞면, 앵커 = 책등 가운데 1cm 앞).
+ * 글꼴은 사진(IMG_3994)에 가깝게: 한글은 굵은 고딕, 영문은 언셜체. font 의 SIZE 자리에 크기가 들어간다.
+ */
+function SignText({ anchor, text, font, w, h, spacing }: { anchor: THREE.Object3D; text: string; font: string; w: number; h: number; spacing: number }) {
+  // 캔버스에만 쓰는 글꼴은 저절로 받지 않으므로 직접 불러오고, 오면 다시 그린다
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    document.fonts
+      ?.load(font.replace("SIZE", "100px"), text)
+      .then(() => setReady(true))
+      .catch(() => {});
+  }, [font, text]);
   const W = 2048;
   const H = Math.round((W * h) / w);
   const tex = useCanvasTexture(
@@ -95,7 +106,7 @@ function SignText({ anchor, text, w, h, spacing }: { anchor: THREE.Object3D; tex
     H,
     (g) => {
       const size = H * 0.78;
-      g.font = `900 ${size}px "Noto Serif KR", ${FONT}`;
+      g.font = `${font.replace("SIZE", `${size}px`)}, ${FONT}`;
       g.textBaseline = "middle";
       const chars = [...text];
       const gap = size * spacing;
@@ -120,7 +131,7 @@ function SignText({ anchor, text, w, h, spacing }: { anchor: THREE.Object3D; tex
       });
       g.restore();
     },
-    [text, spacing]
+    [text, font, spacing, ready]
   );
   return createPortal(
     <mesh>

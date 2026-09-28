@@ -212,23 +212,29 @@ def build_gate_sign():
     # 책 두 권: 등은 살짝 볼록(납작한 타원기둥), 위아래 표지판이 책등·옆으로 조금 나온다
     BULGE = 0.14
 
-    def book(name, L, D, T, z0, dx):
+    def book(name, L, D, T, z0, dx, P):
         r = T / 2 - 0.03
         zc = z0 + T / 2
         front = -(D / 2 - BULGE)  # 책등이 시작되는 면
-        finish(cube(f"{name}_block", L - 0.08, D - BULGE, T - 0.1, (dx, (front + D / 2) / 2, zc)), G_BLACK, R, bevel=0.01)
+        finish(cube(f"{name}_block", L - 0.08, D - BULGE, T - 0.1, (dx, (front + D / 2) / 2, zc)), G_BLACK, P, bevel=0.01)
         sp = cylinder_x(f"{name}_spine", r, L - 0.08, (dx, front, zc), 48)
         sp.scale = (1, BULGE / r, 1)
         bpy.ops.object.transform_apply(scale=True)
-        finish(sp, G_BLACK, R, smooth=True)
+        finish(sp, G_BLACK, P, smooth=True)
         for zz in (z0 + 0.03, z0 + T - 0.03):
-            finish(cube(f"{name}_cover", L, D - BULGE + 0.03, 0.06, (dx, (front - 0.03 + D / 2) / 2, zz)), G_BLACK, R, bevel=0.015)
+            finish(cube(f"{name}_cover", L, D - BULGE + 0.03, 0.06, (dx, (front - 0.03 + D / 2) / 2, zz)), G_BLACK, P, bevel=0.015)
         # 등 앞면 글자 자리 (웹에서 캔버스 글자를 붙인다)
         return (dx, front - BULGE - 0.01, zc)
-    lo = book("sign_book_low", 5.3, 1.9, 0.95, 0.62, 0.0)
-    hi = book("sign_book_high", 5.0, 1.8, 0.9, 0.62 + 0.95, -0.12)
+    lo = book("sign_book_low", 5.3, 1.9, 0.95, 0.62, 0.0, R)
     empty("sign_text_en", lo, R)
-    empty("sign_text_ko", hi, R)
+    # 윗권은 사진처럼 엇갈리게: 조금 짧고, 오른쪽 끝을 아랫권에 맞춰 왼쪽 끝이 안으로 들어가며,
+    # 살짝 뒤로 물러나 비스듬히(약 2°) 얹혔다 (IMG_3994 정면 · 3995 옆)
+    top = root("sign_book_high_pivot")
+    top.parent = R
+    top.location = (0.16, 0.09, 0)
+    top.rotation_euler = (0, 0, math.radians(-2.2))
+    hi = book("sign_book_high", 4.95, 1.8, 0.9, 0.62 + 0.95, 0.0, top)
+    empty("sign_text_ko", hi, top)
     log("built prop_gate_sign")
     return R
 
