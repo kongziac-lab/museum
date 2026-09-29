@@ -11,7 +11,9 @@ import type { GalleryLayout } from "@/lib/gallery";
  *  - 계명한학촌: 두 무리 — 북서 333° 181 m(10~15 m 높은 비탈), 316° 228 m(채플 바로 아래, 약 20 m) / 의양관: 서 292° 210 m, 비탈 시작
  *  - 동천관(대학원): 대로 동쪽, 약 78 × 37 m, 정면(현관)이 북쪽 광장을 본다 — 실제는 분수 남동 x 36~114, z 138~175 m.
  *    대로를 줄인 만큼 광장 남쪽을 가로지르는 길 바로 앞 마당으로 당겼다
- *  - 대로 서쪽 바우어관, 북쪽은 궁산 숲, 남쪽으로 트임
+ *  - 봉경관(사회과학대학): 분수 서남서 x −181 ~ −63, z −1 ~ 93 m, 붉은 벽돌 4층. 동서로 긴 북쪽 날개의 남쪽 면이 앞마당을 보고,
+ *    서쪽 끝에서 현관 날개가 남쪽으로 뻗어 ㄱ자로 마당을 감싼다 (현관은 날개 동쪽 면). 마지막 작품들 앞(서쪽)에 선다
+ *  - 북쪽은 궁산 숲, 남쪽으로 트임
  * 분수가 원점, 작품이 도는 원의 반지름이 R.
  */
 
@@ -128,8 +130,9 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     { node: "bld_main", x: east + 116, z: 3, rot: 0, w: 78.5, d: 16 },
     // 동천관(대학원): 현관이 북쪽 광장을 본다. 모델은 폭 78 m(테라스 79 m), 박공동 정면에서 뒤로 37 m, 앞으로 계단·둔덕 24 m
     { node: "bld_dongcheon", x: dongcheon.x, z: dongcheon.z, rot: Math.PI, w: 80, d: 37, front: 24 },
-    // 대로 서쪽 바우어관 (정면이 대로를 본다)
-    { node: "bld_side_w", x: -44, z: R + 62, rot: Math.PI / 2, w: 56, d: 16 },
+    // 봉경관: 실제 자리 그대로(돌리지 않는다). 원점 = 윤곽 가로 가운데 · 긴 남쪽 면, 북쪽으로 21.4 m, 남쪽으로 현관 날개 72 m
+    // (예전 이 쪽의 '바우어관' 상자는 실제로는 봉경관 앞마당 자리여서 뺐다. 바우어관은 줄인 대로 구간 밖이다)
+    { node: "bld_bongkyung", x: -121.9, z: 20.6, rot: 0, w: 118.6, d: 21.4, front: 72 },
     // 의양관: 서쪽 비탈 시작 (붉은 벽돌 큰 건물)
     { node: "bld_side_w", x: euiyang.x, z: euiyang.z, rot: faceTo(100), w: 73, d: 21, scale: 1.3, pad: { r: 48, h: 6 } },
     // 궁산 기슭 아담스채플(실제 크기, 긴 면이 남남동). 모델은 서쪽 탑 −35 ~ 동쪽 꼬리 +43.5 m, 앞 테라스·계단 +24 m, 뒤 −24 m
@@ -171,6 +174,9 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     benches.push([-edge - 0.6, zb], [edge + 0.6, zb]);
     if (Math.abs(zb) < R + 22) gratedTrees.push([-inner, zb], [inner, zb]);
   }
+  // 봉경관 앞마당 가로수: 광장 쪽 가장자리 한 줄, 동쪽 끝 앞 큰 나무 (사진 IMG_4042 오른쪽)
+  for (let z = 30; z < 92; z += 10) gratedTrees.push([-(plazaX + 10), z]);
+  gratedTrees.push([-57, 31]);
 
   // 조형물 자리 — 사진의 GPS(분수 기준 방위·거리)에 맞추되, 대로처럼 줄인 곳은 비율대로
   const WALL_H = 0.55; // Planters 의 화단 벽 높이
@@ -208,6 +214,8 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
       [dongcheon.x - 40, dongcheon.x + 40, crossN, dongcheon.z - 2],
       // 전산원 계단 앞에서 가로지르는 길까지 곧게 (사진 IMG_4039)
       [edu.x - 7.5, edu.x + 7.5, edu.z, plazaS],
+      // 봉경관 ㄱ자가 감싼 벽돌 앞마당 — 광장 서쪽 끝까지 이어진다
+      [-120.4, -plazaX, 20.6, 92.6],
     ],
     buildings,
     planters,

@@ -189,7 +189,7 @@ export function Site({ plan, mats }: { plan: SitePlan; mats: SiteMaterials }) {
     // 대로: 차도(아스팔트) · 가운데 보행로와 화단 · 보도
     const z0 = plazaS;
     asphalt.push(rect(medianX, roadX, z0, roadS, 0.012), rect(-roadX, -medianX, z0, roadS, 0.012));
-    // 광장 남쪽 끝을 가로지르는 길 (회전 교차로 대신) — 서쪽은 바우어관 앞에서 끝나고, 동쪽은 동천관 앞마당을 따라간다
+    // 광장 남쪽 끝을 가로지르는 길 (회전 교차로 대신) — 서쪽은 봉경관 앞마당에서 끝나고, 동쪽은 동천관 앞마당을 따라간다
     asphalt.push(rect(-(walkX + 21), plan.crossE, z0, z0 + 12, 0.011));
     for (const [x0, x1, cz0, cz1] of plan.courts) brick.push(rect(x0, x1, cz0, cz1, 0.013));
     const [fx0, fx1] = plan.courts[0];

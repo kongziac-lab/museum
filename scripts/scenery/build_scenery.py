@@ -901,6 +901,162 @@ def build_jeonsan(F, hedge, props):
         plant_prop(props["ball"], ed, sx * 7.9, -0.9, 0.0, 0.7, sx)
 
 
+# 봉경관 윤곽 (OSM way 472483534, 분수 기준 m: 동 = +x, 남 = +z) — 모서리를 곧게 다듬었다.
+# 긴 북쪽 날개(동서 78 m) 남쪽 면이 앞마당을 보고, 서쪽 끝에서 현관 날개(폭 20 m)가 남쪽으로 72 m 뻗는다.
+BONGKYUNG_ORIGIN = (-121.9, 20.6)  # 웹 배치(sitePlan)와 같은 원점: 윤곽 가로 가운데 · 긴 남쪽 면 선
+BONGKYUNG_OUTLINE = [
+    (-144.2, 49.0), (-140.2, 49.0), (-140.2, 92.6), (-120.4, 92.6), (-120.4, 20.6), (-62.8, 20.6), (-62.8, -0.8),
+    (-140.4, -0.8), (-140.4, 11.1), (-143.6, 11.1), (-143.6, 3.9), (-181.2, 3.9), (-181.2, 55.7), (-144.2, 55.7),
+]
+
+
+def build_bongkyung(F, hedge, props):
+    """봉경관(鳳卿館, 사회과학대학) — 사용자가 동남쪽 앞마당에서 찍은 사진(IMG_4042, 2026-09-29) + OSM 윤곽.
+    원점 = BONGKYUNG_ORIGIN, 웹에서 돌리지 않고(rot 0) 세운다 → Blender (x, y) = (동 − ox, oz − 남).
+    짙은 붉은 벽돌 4층 평지붕 + 밝은 회색 갓돌, 창 두 개씩 한 칸(gen_bongkyung.py 의 bk_bay 를 벽 길이에 맞춰 정수 칸으로),
+    현관 날개 동쪽 면 1층은 3 m 들어간 유리 현관(벽돌 기둥 셋) 위 현판 '鳳 卿 館', 앞에 화강암 계단,
+    긴 남쪽 면과 동쪽 끝 면 1·2층은 담쟁이, 벽 앞 벽돌 화단에 산울타리와 다듬은 반송."""
+    bk = building("bld_bongkyung")
+    ox, oz = BONGKYUNG_ORIGIN
+
+    def P(x, z):
+        return (x - ox, oz - z)
+
+    H, BAY = 16.0, 6.3
+    bay = lit_material("bk_bay", f"{F}/bk_bay.jpg")
+    brick = lit_material("bk_brick", f"{F}/bk_brick.jpg")
+    lobby = lit_material("bk_lobby", f"{F}/bk_lobby.jpg")
+    plaques = lit_material("bk_plaques", f"{F}/bk_plaques.png", alpha=True)
+    ivy_s = lit_material("bk_south_ivy", f"{F}/bk_south_ivy.png", alpha=True)
+    ivy_e = lit_material("bk_east_ivy", f"{F}/bk_east_ivy.png", alpha=True)
+    for mat in (ivy_s, ivy_e):
+        mat.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.75
+    coping = plain_material("bk_coping", (0.72, 0.73, 0.73), rough=0.4, metal=0.4)
+    roof = plain_material("bk_roof", (0.42, 0.42, 0.41), rough=0.9)
+    soffit = plain_material("bk_soffit", (0.78, 0.77, 0.74), rough=0.8)
+    granite = plain_material("bk_granite", (0.56, 0.55, 0.52), rough=0.85)
+    brick_cap = plain_material("bk_cap", (0.62, 0.6, 0.56), rough=0.8)
+
+    pts = [P(x, z) for x, z in BONGKYUNG_OUTLINE]
+    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))
+    if area < 0:  # 바깥이 진행 방향 오른쪽이 되게 반시계 방향으로 (위에서 볼 때)
+        pts = pts[::-1]
+    web = [(x + ox, oz - y) for x, y in pts]
+
+    # 현관: 현관 날개 동쪽 면(x = −120.4)을 11칸으로 나눈 1·2번째 칸 (남쪽 면 모서리에서 6.5 ~ 19.6 m), 3 m 들어가 있다
+    LOBBY_X, LOBBY_H, DEPTH = -120.4, 3.7, 3.0
+    for i, (a, b) in enumerate(zip(pts, pts[1:] + pts[:1])):
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        wa, wb = web[i], web[(i + 1) % len(web)]
+        if L < 4.5:  # 짧은 턱은 창 없는 벽돌
+            wall(f"bk_wall{i}", a, b, 0, H, brick, bk, tile=(4.0, 4.0))
+            continue
+        n = max(1, round(L / BAY))
+        tile = (L / n, H)
+        if abs(wa[0] - LOBBY_X) < 0.2 and abs(wb[0] - LOBBY_X) < 0.2:
+            # 벽을 따라 칸 1 ~ 3 (남쪽 모서리 z 20.6 쪽부터)이 현관 — 방향이 어느 쪽이든 z 로 자른다
+            m_ = L / n
+            z0, z1 = 20.6 + m_, 20.6 + 3 * m_
+            dirz = 1 if wb[1] > wa[1] else -1
+
+            def at(z):
+                t = (z - wa[1]) / (wb[1] - wa[1])
+                return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+            first, last = (z0, z1) if dirz > 0 else (z1, z0)
+            u_first = abs(first - wa[1]) / m_
+            u_last = abs(last - wa[1]) / m_
+            wall(f"bk_wall{i}_a", a, at(first), 0, H, bay, bk, tile=tile)
+            wall(f"bk_wall{i}_top", at(first), at(last), LOBBY_H, H, bay, bk, tile=tile, u0=u_first)
+            wall(f"bk_wall{i}_b", at(last), b, 0, H, bay, bk, tile=tile, u0=u_last)
+            # 들어간 현관: 안쪽 유리벽, 양옆 벽돌 벽, 천장, 바닥 (모두 바깥 = 동쪽에서 보이게)
+            xa, xb = LOBBY_X, LOBBY_X - DEPTH
+            wall("bk_lobby_glass", P(xb, z1), P(xb, z0), 0, LOBBY_H, lobby, bk)
+            wall("bk_lobby_side_s", P(xa, z1), P(xb, z1), 0, LOBBY_H, brick, bk, tile=(4.0, 4.0))
+            wall("bk_lobby_side_n", P(xb, z0), P(xa, z0), 0, LOBBY_H, brick, bk, tile=(4.0, 4.0))
+            quad("bk_lobby_soffit", [(*P(xa, z0), LOBBY_H), (*P(xa, z1), LOBBY_H), (*P(xb, z1), LOBBY_H), (*P(xb, z0), LOBBY_H)], [(0, 0)] * 4, soffit, bk)
+            slab("bk_lobby_floor", *sorted((P(xb, 0)[0], P(xa + 0.4, 0)[0])), *sorted((P(0, z0)[1], P(0, z1)[1])), 0, 0.6, granite, bk)
+            # 벽돌 기둥 셋 (양 끝과 가운데), 현판 띠
+            for k, z in enumerate((z0 + 0.45, (z0 + z1) / 2, z1 - 0.45)):
+                x0_, x1_ = sorted((P(xa - 0.9, 0)[0], P(xa + 0.02, 0)[0]))
+                y0_, y1_ = sorted((P(0, z - 0.45)[1], P(0, z + 0.45)[1]))
+                pier = slab(f"bk_pier{k}", x0_, x1_, y0_, y1_, 0, LOBBY_H, brick, bk)
+                box_uv(pier, 4.0)
+            wall("bk_plaques", P(xa + 0.03, z1), P(xa + 0.03, z0), 3.72, 4.52, plaques, bk)
+            continue
+        wall(f"bk_wall{i}", a, b, 0, H, bay, bk, tile=tile)
+        # 담쟁이: 긴 남쪽 면(z 20.6, 서 → 동)과 동쪽 끝 면(x −62.8, 남 → 북) — 그림은 바깥에서 볼 때 왼쪽이 u = 0
+        o = 0.08
+        nx, ny = (b[1] - a[1]) / L, -(b[0] - a[0]) / L  # 바깥쪽 (진행 방향 오른쪽)
+        if abs(wa[1] - 20.6) < 0.2 and abs(wb[1] - 20.6) < 0.2 and min(wa[0], wb[0]) > -121:
+            mat = ivy_s
+        elif abs(wa[0] + 62.8) < 0.2 and abs(wb[0] + 62.8) < 0.2:
+            mat = ivy_e
+        else:
+            mat = None
+        if mat:
+            wall(f"bk_ivy{i}", (a[0] + nx * o, a[1] + ny * o), (b[0] + nx * o, b[1] + ny * o), 0, 11.5, mat, bk)
+
+    # 평지붕 + 밝은 회색 금속 갓돌 (벽 선 위에 0.36 m 폭, 바깥으로 18 cm 나온다)
+    me = bpy.data.meshes.new("bk_roof")
+    bm = bmesh.new()
+    bm.faces.new([bm.verts.new((x, y, H - 0.05)) for x, y in pts])
+    bm.normal_update()
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(roof)
+    r = bpy.data.objects.new("bk_roof", me)
+    bpy.context.collection.objects.link(r)
+    r.parent = bk
+    for i, (a, b) in enumerate(zip(pts, pts[1:] + pts[:1])):
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        c = box(f"bk_coping{i}", L + 0.36, 0.36, H - 0.02, H + 0.2)
+        c.location = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0)
+        c.rotation_euler.z = math.atan2(b[1] - a[1], b[0] - a[0])
+        c.data.materials.append(coping)
+        c.parent = bk
+    # 옥상 설비 (사진: 동쪽 끝 위 작은 장비·안테나)
+    for k, (x, z, sx, sy, h) in enumerate([(-68.0, 6.0, 2.4, 1.6, 1.4), (-72.0, 2.5, 1.2, 1.2, 1.0), (-150.0, 30.0, 5.0, 3.0, 2.2)]):
+        e = box(f"bk_unit{k}", sx, sy, H - 0.05, H + h)
+        e.location = (*P(x, z), 0)
+        e.data.materials.append(coping)
+        e.parent = bk
+
+    # 현관 앞 화강암 층계참(0.6 m)과 동쪽으로 내려가는 네 단, 양옆 벽돌 턱
+    zs = sorted((20.6 + 72.0 / 11 - 0.6, 20.6 + 3 * 72.0 / 11 + 0.6))
+    x_land = LOBBY_X + 5.0
+    yl = sorted((P(0, zs[0])[1], P(0, zs[1])[1]))
+    slab("bk_landing", P(LOBBY_X, 0)[0], P(x_land, 0)[0], *yl, 0, 0.6, granite, bk)
+    for k in range(4):
+        slab(f"bk_step{k}", P(x_land + k * 0.42, 0)[0], P(x_land + (k + 1) * 0.42, 0)[0], *yl, 0, 0.6 - (k + 1) * 0.15, granite, bk)
+    for z in zs:
+        ys = sorted((P(0, z - 0.35)[1], P(0, z + 0.35)[1]))
+        cheek = slab(f"bk_cheek{z:.0f}", P(LOBBY_X, 0)[0], P(x_land + 1.7, 0)[0], *ys, 0, 0.85, brick, bk)
+        box_uv(cheek, 4.0)
+        slab(f"bk_cheek_cap{z:.0f}", P(LOBBY_X, 0)[0], P(x_land + 1.75, 0)[0], ys[0] - 0.05, ys[1] + 0.05, 0.85, 0.93, brick_cap, bk)
+
+    # 벽 앞 벽돌 화단 (0.55 m 턱 + 산울타리) — 긴 남쪽 면, 현관 북쪽 모서리, 현관 남쪽
+    def planter(name, x0, x1, z0, z1, pines=(), balls=()):
+        (bx0, by1), (bx1, by0) = P(x0, z0), P(x1, z1)
+        wall_ = slab(f"{name}_wall", bx0, bx1, by0, by1, 0, 0.55, brick, bk)
+        box_uv(wall_, 4.0)
+        slab(f"{name}_cap", bx0 - 0.04, bx1 + 0.04, by0 - 0.04, by1 + 0.04, 0.55, 0.62, brick_cap, bk)
+        h = slab(f"{name}_hedge", bx0 + 0.3, bx1 - 0.3, by0 + 0.3, by1 - 0.3, 0.5, 1.45, hedge, bk, bevel=0.22)
+        box_uv(h, 1.5)
+        for k, (x, z, s) in enumerate(pines):
+            plant_prop(props["pine"], bk, *P(x, z), 0.6, s, k * 1.3)
+        for k, (x, z, s) in enumerate(balls):
+            plant_prop(props["ball"], bk, *P(x, z), 0.6, s, k)
+
+    planter("bk_bed_s", -117.0, -64.5, 22.0, 26.0,
+            pines=[(-111.0, 24.0, 1.25), (-103.5, 24.2, 1.1), (-96.0, 23.8, 1.35), (-88.0, 24.1, 1.2), (-79.5, 24.0, 1.3), (-71.0, 24.2, 1.15)],
+            balls=[(-107.2, 24.4, 0.7), (-92.0, 24.4, 0.75), (-75.3, 24.4, 0.7), (-66.2, 24.0, 0.65)])
+    planter("bk_bed_corner", -119.6, -117.8, 21.2, 26.2, balls=[(-118.7, 23.5, 0.65)])
+    planter("bk_bed_lobby_s", -119.6, -115.6, zs[1] + 1.0, zs[1] + 9.0, pines=[(-117.6, zs[1] + 5.0, 1.2)], balls=[(-117.4, zs[1] + 2.2, 0.7), (-117.2, zs[1] + 7.8, 0.6)])
+    # 현관 앞 계단 아래 둥근 향나무 화단 (사진 왼쪽 아래)
+    planter("bk_bed_front", x_land + 3.2, x_land + 7.2, zs[0] + 2.0, zs[1] - 2.0, balls=[(x_land + 5.2, zs[0] + 4.0, 0.8), (x_land + 5.2, zs[1] - 4.0, 0.8)])
+
+
 def build_dongcheon(F, stone, roof_green, hedge, rock, props):
     """동천관(東泉館, 대학원) — 사용자가 찍은 사진 3장 + OSM 윤곽(78 × 37 m)을 따른 실측 m.
     원점 = 가운데 현관 축, 박공동 정면 선(y=0). 정면(북쪽, 분수 광장 쪽)은 Blender −Y.
@@ -1443,6 +1599,7 @@ def build_campus():
 
     build_dongcheon(F, stone, roof_green, hedge, rock, {"pine": tp, "ball": tb, "rock": rk})
     build_jeonsan(F, hedge, {"pine": tp, "ball": tb, "rock": rk})
+    build_bongkyung(F, hedge, {"pine": tp, "ball": tb, "rock": rk})
 
     roots = [o.name for o in bpy.data.objects if o.type == "EMPTY" and o.parent is None and o.name.startswith(("bld_", "prop_"))]
     for n in roots:
