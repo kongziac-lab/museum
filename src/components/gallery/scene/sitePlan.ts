@@ -9,7 +9,9 @@ import type { GalleryLayout } from "@/lib/gallery";
  *  - 행소관(본관): 분수 동쪽 117~195 m 평지, 정면은 남쪽 (광장에서는 전산교육원 뒤)
  *  - 아담스채플: 가운데 박공 발치가 북서 316° 345 m, 광장보다 약 42 m 높은 궁산 기슭, 긴 면이 남남동(155°)을 본다, 약 78 × 24 m
  *  - 계명한학촌: 두 무리 — 북서 333° 181 m(10~15 m 높은 비탈), 316° 228 m(채플 바로 아래, 약 20 m) / 의양관: 서 292° 210 m, 비탈 시작
- *  - 대로 동쪽 동천관(대학원) · 서쪽 바우어관, 북쪽은 궁산 숲, 남쪽으로 트임
+ *  - 동천관(대학원): 대로 동쪽, 약 78 × 37 m, 정면(현관)이 북쪽 광장을 본다 — 실제는 분수 남동 x 36~114, z 138~175 m.
+ *    대로를 줄인 만큼 광장 남쪽을 가로지르는 길 바로 앞 마당으로 당겼다
+ *  - 대로 서쪽 바우어관, 북쪽은 궁산 숲, 남쪽으로 트임
  * 분수가 원점, 작품이 도는 원의 반지름이 R.
  */
 
@@ -24,9 +26,10 @@ export interface Placement {
   scale?: number;
   /** 비탈 위 건물: 땅을 반지름 r 안에서 높이 h로 고르고 그 위에 세운다 (off = 터 중심의 모델 좌표 [x, z], 배율 전) */
   pad?: { r: number; h: number; off?: [number, number] };
-  /** 정면 폭, 깊이 (나무를 비울 자리 계산용) */
+  /** 정면 폭, 깊이, 정면 앞으로 비울 거리(기본 8 m) — 나무를 비울 자리 계산용 */
   w: number;
   d: number;
+  front?: number;
 }
 
 export interface Planter {
@@ -66,6 +69,10 @@ export interface SitePlan {
   medianX: number;
   walkX: number;
   gateZ: number;
+  /** 광장 남쪽을 가로지르는 길의 동쪽 끝 (동천관 앞을 지난다) */
+  crossE: number;
+  /** 동천관 앞 벽돌 마당 [x0, x1, z0, z1] */
+  forecourt: [number, number, number, number];
   buildings: Placement[];
   planters: Planter[];
   /** 광장 가로수 (격자 틀) */
@@ -108,6 +115,9 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
   const hanokE = at(333, 181);
   const hanokW = at(316, 228);
   const euiyang = at(292, 210);
+  // 동천관: 가로지르는 길(광장 남쪽 끝 + 12 m) 앞 25 m 마당 너머가 박공동 정면, 서쪽 끝은 실제처럼 대로에서 약 19 m
+  const crossN = plazaS + 12;
+  const dongcheon = { x: 77, z: crossN + 25 };
   const buildings: Placement[] = [
     { node: "bld_gate", x: 0, z: gateZ, rot: 0, w: 64, d: 6 },
     { node: "bld_library", x: 0, z: plazaN - 2, rot: 0, w: 54, d: 32 },
@@ -115,8 +125,9 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     { node: "bld_edu", x: east, z: 7, rot: -Math.PI / 2, w: 28, d: 31 },
     // 행소관(본관): 전산교육원 뒤 동쪽 평지, 정면은 남쪽
     { node: "bld_main", x: east + 116, z: 3, rot: 0, w: 78.5, d: 16 },
-    // 대로 동쪽 동천관(녹색 지붕) · 서쪽 바우어관 (정면이 대로를 본다)
-    { node: "bld_side_e", x: 42, z: R + 58, rot: -Math.PI / 2, w: 48, d: 14 },
+    // 동천관(대학원): 현관이 북쪽 광장을 본다. 모델은 폭 78 m(테라스 79 m), 박공동 정면에서 뒤로 37 m, 앞으로 계단·둔덕 24 m
+    { node: "bld_dongcheon", x: dongcheon.x, z: dongcheon.z, rot: Math.PI, w: 80, d: 37, front: 24 },
+    // 대로 서쪽 바우어관 (정면이 대로를 본다)
     { node: "bld_side_w", x: -44, z: R + 62, rot: Math.PI / 2, w: 56, d: 16 },
     // 의양관: 서쪽 비탈 시작 (붉은 벽돌 큰 건물)
     { node: "bld_side_w", x: euiyang.x, z: euiyang.z, rot: faceTo(100), w: 73, d: 21, scale: 1.3, pad: { r: 48, h: 6 } },
@@ -191,6 +202,8 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     medianX: 7.6,
     walkX: 19,
     gateZ,
+    crossE: dongcheon.x + 42,
+    forecourt: [dongcheon.x - 40, dongcheon.x + 40, crossN, dongcheon.z - 2],
     buildings,
     planters,
     gratedTrees,
@@ -251,6 +264,7 @@ export function groundHeight(plan: SitePlan, x: number, z: number) {
 export function blockedBySite(plan: SitePlan, x: number, z: number, margin = 2.5) {
   if (Math.abs(x) < plan.plazaX + margin - 4 && z < plan.plazaS + margin && z > plan.plazaN - 36) return true;
   if (Math.abs(x) < plan.walkX + margin && z >= plan.plazaS - 2 && z < plan.roadS + 8) return true;
+  if (x > -(plan.walkX + 21) - margin && x < plan.crossE + margin && z > plan.plazaS - margin && z < plan.plazaS + 12 + margin) return true;
   for (const p of plan.pads) if (Math.hypot(x - p.x, z - p.z) < p.r + margin) return true;
   for (const b of plan.buildings) {
     const dx = x - b.x;
@@ -259,7 +273,7 @@ export function blockedBySite(plan: SitePlan, x: number, z: number, margin = 2.5
     const s = Math.sin(b.rot);
     const lx = dx * c - dz * s;
     const lz = dx * s + dz * c;
-    if (Math.abs(lx) < b.w / 2 + margin && lz > -b.d - margin && lz < 8 + margin) return true;
+    if (Math.abs(lx) < b.w / 2 + margin && lz > -b.d - margin && lz < (b.front ?? 8) + margin) return true;
   }
   return false;
 }

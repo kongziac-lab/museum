@@ -568,7 +568,7 @@ def join_by_material(root):
         objs[0].name = f"{'photo_' if is_photo else ''}{root.name}_{mats[0] if mats else 'mesh'}"
 
 
-def export(path, objs):
+def export(path, objs, draco=True):
     bpy.ops.object.select_all(action="DESELECT")
     for o in objs:
         o.select_set(True)
@@ -581,7 +581,7 @@ def export(path, objs):
         export_normals=True,
         export_image_format="WEBP",
         export_image_quality=82,
-        export_draco_mesh_compression_enable=True,
+        export_draco_mesh_compression_enable=draco,
         export_draco_mesh_compression_level=7,
         export_draco_position_quantization=14,
         export_draco_normal_quantization=10,
@@ -651,8 +651,8 @@ def box_walls(prefix, x0, x1, y0, y1, z0, z1, mat, parent, tile=None, front=True
     return obs
 
 
-def gable_roof(name, x0, x1, y0, y1, z0, ridge, mat, parent, along="y"):
-    """박공지붕 (along 방향으로 용마루)."""
+def gable_roof(name, x0, x1, y0, y1, z0, ridge, mat, parent, along="y", ends=True):
+    """박공지붕 (along 방향으로 용마루). ends=False면 양 끝 삼각형 없이 지붕면만 (박공벽을 따로 세울 때)."""
     me = bpy.data.meshes.new(name)
     bm = bmesh.new()
     if along == "y":
@@ -661,7 +661,7 @@ def gable_roof(name, x0, x1, y0, y1, z0, ridge, mat, parent, along="y"):
     else:
         ym = (y0 + y1) / 2
         v = [bm.verts.new(p) for p in [(x0, y0, z0), (x0, ym, ridge), (x0, y1, z0), (x1, y0, z0), (x1, ym, ridge), (x1, y1, z0)]]
-    for f in [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1), (1, 4, 5, 2)]:
+    for f in [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1), (1, 4, 5, 2)][0 if ends else 2 :]:
         bm.faces.new([v[i] for i in f])
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     uvl = bm.loops.layers.uv.new("UVMap")
@@ -817,6 +817,182 @@ def slab(name, x0, x1, y0, y1, z0, z1, mat, parent, bevel=0.0):
 def pediment(name, x0, x1, y0, y1, z0, height, mat, parent):
     ob = gable_roof(name, x0, x1, y0, y1, z0, z0 + height, mat, parent, along="y")
     return ob
+
+
+def tri(name, pts, uvs, mat, parent):
+    """삼각형 한 장 (pts 반시계, 바깥에서 볼 때)."""
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    f = bm.faces.new([bm.verts.new(p) for p in pts])
+    uvl = bm.loops.layers.uv.new("UVMap")
+    for lp, uv in zip(f.loops, uvs):
+        lp[uvl].uv = uv
+    bm.normal_update()
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(mat)
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(ob)
+    ob.parent = parent
+    return ob
+
+
+def build_dongcheon(F, stone, roof_green, hedge, rock, props):
+    """동천관(東泉館, 대학원) — 사용자가 찍은 사진 3장 + OSM 윤곽(78 × 37 m)을 따른 실측 m.
+    원점 = 가운데 현관 축, 박공동 정면 선(y=0). 정면(북쪽, 분수 광장 쪽)은 Blender −Y.
+    가운데 3층 유리 커튼월 앞 이오니아식 기둥 8개 현관(프리즈 '東泉館', 십자 원형창 박공) →
+    양옆 3층 날개(1·2층 짝창, 3층 띠창) → 양 끝 박공동(흰 귓돌, 돌출창·메달리온). 지붕은 녹색 동판.
+    현관 앞 계단(정면에서 보아 왼쪽, 동쪽)과 벽돌 화단 위 검은 돌 조형물(오른쪽, 서쪽), 날개 앞 난간 두른 테라스, 그 앞 벽돌 마당 가운데 반송·향나무·돌 둔덕."""
+    dc = building("bld_dongcheon")
+    wing = lit_material("dc_wing", f"{F}/dc_wing.jpg")
+    center = lit_material("dc_center", f"{F}/dc_center.jpg")
+    pav_front = lit_material("dc_pav_front", f"{F}/dc_pav_front.png", alpha=True)
+    pav_side = lit_material("dc_pav_side", f"{F}/dc_pav_side.jpg")
+    bay = lit_material("dc_bay", f"{F}/dc_bay.jpg")
+    frieze = lit_material("dc_frieze", f"{F}/dc_frieze.jpg")
+    ped = lit_material("dc_pediment", f"{F}/dc_pediment.png", alpha=True)
+    coffer = lit_material("dc_coffer", f"{F}/dc_coffer.jpg")
+    fence = lit_material("dc_fence", f"{F}/dc_fence.png", alpha=True)
+    granite = plain_material("dc_granite", (0.55, 0.53, 0.5), rough=0.85)
+    brick = plain_material("dc_brick", (0.26, 0.085, 0.06), rough=0.9)
+    E, FL = 15.0, 0.9  # 처마 높이, 1층 바닥
+
+    # ── 양 끝 박공동 (13 × 37 m, 처마 15 m, 용마루 23.5 m) ──
+    for sx in (-1, 1):
+        x0, x1 = sorted((sx * 26.0, sx * 39.0))
+        quad(f"dc_pav_front{sx:+d}", [(x0, 0, 0), (x1, 0, 0), (x1, 0, 23.5), (x0, 0, 23.5)], [(0, 0), (1, 0), (1, 1), (0, 1)], pav_front, dc)
+        quad(f"dc_pav_back{sx:+d}", [(x1, 37, 0), (x0, 37, 0), (x0, 37, 23.5), (x1, 37, 23.5)], [(0, 0), (1, 0), (1, 1), (0, 1)], pav_front, dc)
+        xo, xi = (x1, x0) if sx > 0 else (x0, x1)  # 바깥 옆면, 안쪽(날개 쪽) 옆면
+        a, b = ((xo, 0), (xo, 37)) if sx > 0 else ((xo, 37), (xo, 0))
+        wall(f"dc_pav_side{sx:+d}", a, b, 0, E, pav_side, dc, tile=(37, E))
+        for (ya, yb) in ((0.0, 2.5), (18.5, 37.0)):  # 날개 앞·뒤로 드러난 안쪽 옆면
+            a, b = ((xi, yb), (xi, ya)) if sx > 0 else ((xi, ya), (xi, yb))
+            wall(f"dc_pav_inner{sx:+d}_{ya:.0f}", a, b, 0, E, pav_side, dc, tile=(37, E), u0=ya / 37)
+        gable_roof(f"dc_pav_roof{sx:+d}", x0 - 0.35, x1 + 0.35, -0.45, 37.45, E, 23.95, roof_green, dc, along="y", ends=False)
+        # 가운데 돌출창 (4.6 m 폭, 0.55 m 앞으로) + 흰 돌 옆면·갓
+        cx = sx * 32.5
+        bx0, bx1 = cx - 2.3, cx + 2.3
+        quad(f"dc_bay{sx:+d}", [(bx0, -0.55, FL), (bx1, -0.55, FL), (bx1, -0.55, 14.3), (bx0, -0.55, 14.3)], [(0, 0), (1, 0), (1, 1), (0, 1)], bay, dc)
+        wall(f"dc_bay_l{sx:+d}", (bx0, 0), (bx0, -0.55), FL, 14.3, stone, dc)
+        wall(f"dc_bay_r{sx:+d}", (bx1, -0.55), (bx1, 0), FL, 14.3, stone, dc)
+        slab(f"dc_bay_cap{sx:+d}", bx0 - 0.12, bx1 + 0.12, -0.7, 0.05, 14.3, 14.55, stone, dc)
+        slab(f"dc_bay_foot{sx:+d}", bx0 - 0.08, bx1 + 0.08, -0.65, 0.05, 0.0, FL, stone, dc)
+
+    # ── 3층 날개 (15.5 m, 앞면 2.5 m 들어감) + 흰 처마 돌림띠 + 녹색 모임지붕 ──
+    for sx in (-1, 1):
+        x0, x1 = sorted((sx * 10.5, sx * 26.0))
+        wall(f"dc_wing_front{sx:+d}", (x0, 2.5), (x1, 2.5), 0, E, wing, dc, tile=(4.0, E))
+        wall(f"dc_wing_back{sx:+d}", (x1, 18.5), (x0, 18.5), 0, E, wing, dc, tile=(4.0, E))
+        slab(f"dc_wing_cornice{sx:+d}", x0, x1, 2.15, 2.5, E - 0.45, E + 0.05, stone, dc)
+        hip_roof(f"dc_wing_roof{sx:+d}", x0, x1, 2.5, 18.5, E, E + 3.8, roof_green, dc, overhang=0.4)
+
+    # ── 현관 뒤 가운데 몸체 (21 × 24.5 m, 유리 커튼월) ──
+    quad("dc_center_front", [(-10.5, 3.5, 0), (10.5, 3.5, 0), (10.5, 3.5, E), (-10.5, 3.5, E)], [(0, 0), (1, 0), (1, 1), (0, 1)], center, dc)
+    wall("dc_center_side_e", (10.5, 2.5), (10.5, 28), 0, E, wing, dc, tile=(4.0, E))
+    wall("dc_center_side_w", (-10.5, 28), (-10.5, 2.5), 0, E, wing, dc, tile=(4.0, E))
+    wall("dc_center_back", (10.5, 28), (-10.5, 28), 0, E, wing, dc, tile=(4.0, E))
+    hip_roof("dc_center_roof", -10.5, 10.5, 3.5, 28, E, E + 4.5, roof_green, dc, overhang=0.4)
+
+    # ── 현관: 기단·계단 → 이오니아식 기둥 8개(앞 4, 옆 2씩) → 우물반자 → 아키트레이브·프리즈·코니스 → 박공 ──
+    slab("dc_portico_base", -10.8, 10.8, -11.2, 3.5, 0, FL, granite, dc)
+    for i in range(6):  # 계단은 정면에서 보아 왼쪽 3/5, 오른쪽은 조형물 화단 (사진 IMG_4038)
+        slab(f"dc_step{i}", -8.8, 1.8, -11.2 - (i + 1) * 0.4, -11.2 - i * 0.4, 0, FL - (i + 1) * 0.15, granite, dc)
+    slab("dc_sculpt_bed", 2.4, 9.4, -14.2, -11.2, 0, FL, brick, dc)
+    slab("dc_sculpt_bed_cap", 2.3, 9.5, -14.3, -11.1, FL, FL + 0.1, stone, dc)
+    # 검은 돌 조형물: 윤이 나는 검은 화강암 알(길이 2.4 m, 지름 2 m), 앞을 평평하게 잘라 북서쪽 위로 기울였다. 흰 이오니아식 주두 위에 얹힘
+    black = plain_material("dc_black_granite", (0.018, 0.019, 0.021), rough=0.18)
+    sx_, sy_ = 5.4, -12.7
+    fluted_column("dc_sculpt_pedestal", 0.36, 1.05, dc, (sx_, sy_, FL + 0.1), stone, flutes=16)
+    me = bpy.data.meshes.new("dc_sculpture")
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=40, v_segments=24, radius=1.0)
+    for v in bm.verts:
+        v.co = Vector((v.co.x * 1.0, v.co.y * 1.35, v.co.z * 1.0))
+    cut = bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, -0.65, 0), plane_no=(0, -1, 0), clear_outer=True)
+    rim = [e for e in cut["geom_cut"] if isinstance(e, bmesh.types.BMEdge)]
+    cap = bmesh.ops.edgeloop_fill(bm, edges=rim)["faces"]
+    rot = Matrix.Rotation(0.45, 3, "Z") @ Matrix.Rotation(-0.35, 3, "X")  # 잘린 면이 앞(북) 오른쪽(서) 위를 본다
+    bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=rot)
+    bmesh.ops.translate(bm, verts=bm.verts, vec=(sx_, sy_ + 0.2, FL + 0.1 + 1.05 + 0.78))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    for f in bm.faces:
+        f.smooth = f not in cap
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new("dc_sculpture", me)
+    ob.data.materials.append(black)
+    bpy.context.collection.objects.link(ob)
+    ob.parent = dc
+    colH, colR = 12.4, 0.62
+    spots = [(x, -9.8) for x in (-8.7, -2.9, 2.9, 8.7)] + [(sx * 8.7, y) for sx in (-1, 1) for y in (-5.7, -1.6)]
+    for k, (x, y) in enumerate(spots):
+        fluted_column(f"dc_col{k}", colR, colH, dc, (x, y, FL), stone, flutes=20)
+    top = FL + colH  # 13.3
+    quad("dc_soffit", [(-9.9, -10.2, top - 0.02), (-9.9, 3.5, top - 0.02), (9.9, 3.5, top - 0.02), (9.9, -10.2, top - 0.02)],
+         [(-9.9 / 2.8, -10.2 / 2.8), (-9.9 / 2.8, 3.5 / 2.8), (9.9 / 2.8, 3.5 / 2.8), (9.9 / 2.8, -10.2 / 2.8)], coffer, dc)
+    slab("dc_architrave", -10.1, 10.1, -10.4, 3.5, top, top + 0.8, stone, dc)
+    slab("dc_frieze_block", -10.1, 10.1, -10.4, 3.5, top + 0.8, top + 1.6, stone, dc)
+    quad("dc_frieze", [(-10.1, -10.42, top + 0.8), (10.1, -10.42, top + 0.8), (10.1, -10.42, top + 1.6), (-10.1, -10.42, top + 1.6)], [(0, 0), (1, 0), (1, 1), (0, 1)], frieze, dc)
+    slab("dc_cornice", -10.55, 10.55, -10.85, 3.5, top + 1.6, top + 2.1, stone, dc, bevel=0.05)
+    pz, peak = top + 2.1, 21.0
+    gable_roof("dc_pediment_block", -10.55, 10.55, -10.85, -10.15, pz, peak, stone, dc, along="y")
+    tri("dc_pediment", [(-10.55, -10.87, pz), (10.55, -10.87, pz), (0, -10.87, peak)], [(0, 0), (1, 0), (0.5, 1)], ped, dc)
+    gable_roof("dc_portico_roof", -10.75, 10.75, -10.95, 4.2, pz - 0.05, peak + 0.25, roof_green, dc, along="y", ends=False)
+
+    # ── 날개·박공동 앞 테라스 (벽돌 옹벽 + 흰 돌 갓 + 마름모 무늬 쇠 난간) ──
+    for sx in (-1, 1):
+        x0, x1 = sorted((sx * 10.8, sx * 39.6))
+        slab(f"dc_terrace{sx:+d}", x0, x1, -4.0, 2.5, 0, FL, brick, dc)
+        slab(f"dc_terrace_cap{sx:+d}", x0, x1, -4.1, -3.65, FL, FL + 0.12, stone, dc)
+        wall(f"dc_fence{sx:+d}", (x0, -3.88), (x1, -3.88), FL + 0.12, FL + 1.02, fence, dc, tile=(3.0, 0.9), vr=(0, 1))
+
+    # ── 현관 앞 둔덕: 화강암 테 + 회양목 + 반송 · 둥근 향나무 · 자연석 (광장 소품을 옮겨 심는다) ──
+    cy = -19.0
+    me = bpy.data.meshes.new("dc_mound_curb")
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=40, radius1=4.6, radius2=4.6, depth=0.35)
+    for v in bm.verts:
+        v.co += Vector((0, cy, 0.175))
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new("dc_mound_curb", me)
+    ob.data.materials.append(granite)
+    bpy.context.collection.objects.link(ob)
+    ob.parent = dc
+    me = bpy.data.meshes.new("dc_mound")
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=3, radius=1.0, calc_uvs=True)
+    for v in list(bm.verts):
+        v.co = Vector((v.co.x * 4.4, v.co.y * 4.4 + cy, max(v.co.z, 0) * 0.9 + 0.3))
+    bm.to_mesh(me)
+    bm.free()
+    for poly in me.polygons:
+        poly.use_smooth = True
+    ob = bpy.data.objects.new("dc_mound", me)
+    ob.data.materials.append(hedge)
+    bpy.context.collection.objects.link(ob)
+    ob.parent = dc
+
+    def plant(kind, x, y, z, s, rot=0.0):
+        mtx = Matrix.Translation((x, y, z)) @ Matrix.Rotation(rot, 4, "Z") @ Matrix.Scale(s, 4)
+        for ch in props[kind].children:
+            if ch.type != "MESH":
+                continue
+            c = ch.copy()
+            c.data = ch.data.copy()
+            c.data.transform(mtx @ ch.matrix_basis)
+            c.matrix_basis = Matrix.Identity(4)
+            c.name = f"dc_{kind}_{ch.name}"
+            bpy.context.collection.objects.link(c)
+            c.parent = dc
+
+    plant("pine", 0.4, cy + 0.3, 0.9, 1.35, 0.6)
+    plant("ball", 8.2, -12.5, FL + 0.1, 0.75, 0.4)  # 조형물 옆 둥근 향나무
+    plant("ball", 3.4, -13.4, FL + 0.1, 0.45, 1.2)
+    for k, (x, y, s) in enumerate([(-2.8, cy - 1.6, 0.75), (2.9, cy - 1.2, 0.8), (-1.2, cy - 3.0, 0.55), (1.6, cy - 3.0, 0.6), (-3.2, cy + 1.4, 0.65), (3.0, cy + 1.8, 0.7)]):
+        plant("ball", x, y, 0.35, s, k)
+    for k, (x, y, s, r) in enumerate([(-1.8, cy - 3.6, 0.9, 0.3), (0.3, cy - 3.9, 0.7, -0.2), (2.6, cy - 3.2, 1.0, 1.1), (-3.9, cy - 0.6, 0.8, 1.5), (3.8, cy + 0.2, 0.75, 1.9)]):
+        plant("rock", x, y, 0.1, s, r)
 
 
 def build_campus():
@@ -1130,13 +1306,9 @@ def build_campus():
     # ── 광장 양옆 건물 (영상 속 녹색 지붕 붉은 벽돌 건물) ──
     roof_green = plain_material("roof_green", (0.22, 0.38, 0.3), rough=0.6)
     lib_tile = bpy.data.materials["photo_library_tile"]
-    floors = photo_material("photo_main_floors", f"{F}/main_floors.jpg")
     sw = building("bld_side_w")  # 4층, 도서관 창 무늬
     box_walls("photo_side_w", -28, 28, 0, 16, 0, 16, lib_tile, sw, tile=(13.5, 16.0))
     gable_roof("side_w_roof", -28.4, 28.4, -0.4, 16.4, 16, 20.5, roof_green, sw, along="x")
-    se = building("bld_side_e")  # 4층, 본관 날개 창 무늬
-    box_walls("photo_side_e", -24, 24, 0, 14, 0, 12.74, floors, se, tile=(1.38, 6.37))
-    gable_roof("side_e_roof", -24.4, 24.4, -0.4, 14.4, 12.74, 16.5, roof_green, se, along="x")
 
     # ── 광장 소품: 다듬은 반송 · 둥근 향나무 · 자연석 표석 ──
     hedge = pbr_material("hedge", os.path.join(OUT, "tex", "hedge_diffuse.jpg"), os.path.join(OUT, "tex", "hedge_nor_gl.jpg"), None, rough=0.85)
@@ -1222,15 +1394,21 @@ def build_campus():
     e = empty("gate_text", (0, -2.52, top + 1.1))
     e.parent = gt
 
+    build_dongcheon(F, stone, roof_green, hedge, rock, {"pine": tp, "ball": tb, "rock": rk})
+
     roots = [o.name for o in bpy.data.objects if o.type == "EMPTY" and o.parent is None and o.name.startswith(("bld_", "prop_"))]
     for n in roots:
         join_by_material(bpy.data.objects[n])
+    if "--dongcheon" in opts:  # 동천관만 따로 (Draco 없이) → dongcheon_update.py 가 지금 campus.glb 에 끼워 넣는다
+        dc = bpy.data.objects["bld_dongcheon"]
+        export(opts["--dongcheon"], [dc, *dc.children_recursive], draco=False)
+        return
     export(os.path.join(OUT, "campus.glb"), [o for o in bpy.data.objects])
     if "--preview" in opts:
         for o in bpy.data.objects:
             if o.parent is None and o.type == "EMPTY" and o.name.startswith("bld_"):
-                pos = {"bld_library": (0, 60, 0), "bld_main": (80, 40, 0), "bld_adams": (-60, 170, 0), "bld_edu": (45, 50, 0), "bld_hanok": (-50, 90, 0), "bld_side_w": (-45, 20, 0), "bld_side_e": (45, 20, 0), "bld_gate": (0, -20, 0)}
-                rot = {"bld_library": 0, "bld_main": math.pi / 2, "bld_adams": -0.3, "bld_edu": math.pi / 2, "bld_hanok": -0.4, "bld_side_w": -math.pi / 2, "bld_side_e": math.pi / 2, "bld_gate": 0}
+                pos = {"bld_library": (0, 60, 0), "bld_main": (80, 40, 0), "bld_adams": (-60, 170, 0), "bld_edu": (45, 50, 0), "bld_hanok": (-50, 90, 0), "bld_side_w": (-45, 20, 0), "bld_dongcheon": (60, 0, 0), "bld_gate": (0, -20, 0)}
+                rot = {"bld_library": 0, "bld_main": math.pi / 2, "bld_adams": -0.3, "bld_edu": math.pi / 2, "bld_hanok": -0.4, "bld_side_w": -math.pi / 2, "bld_dongcheon": math.pi / 2, "bld_gate": 0}
                 o.location = pos[o.name]
                 o.rotation_euler.z = rot[o.name]
             elif o.parent is None and o.type == "EMPTY" and o.name.startswith("prop_"):

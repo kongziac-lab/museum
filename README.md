@@ -116,7 +116,8 @@ npm run dev
 | `scripts/scenery/prep_facades.py` | 건물 사진의 원근을 바로잡고 하늘을 지운 외벽 텍스처 |
 | `scripts/scenery/gen_textures.py` | 헤링본 포장·화단 벽돌·화강암·아스팔트·회양목·먼 산 숲 재질 (광장 사진 색 기준) |
 | `scripts/scenery/gen_chapel.py` | 아담스채플 외벽 무늬 (측랑·채광층·탑·가운데 박공·돔 드럼) |
-| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(도서관·행소관·아담스채플·전산교육원·한학촌·정문·반송·향나무·표석) |
+| `scripts/scenery/gen_dongcheon.py` | 동천관(대학원) 외벽 무늬 (날개·유리 커튼월·박공동·돌출창·'東泉館' 프리즈·현관 박공) |
+| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(도서관·행소관·아담스채플·전산교육원·동천관·한학촌·정문·반송·향나무·표석) |
 
 ```bash
 W=scenery-src   # 작업 폴더 (저장소에 넣지 않음)
@@ -124,6 +125,7 @@ node scripts/scenery/gen-trees.mjs $W/trees
 python3 scripts/scenery/prep_facades.py $W/kmu $W/facades   # $W/kmu 에 건물 사진 (출처: public/credits.html)
 python3 scripts/scenery/gen_textures.py public/scenery/tex
 python3 scripts/scenery/gen_chapel.py $W/facades
+python3 scripts/scenery/gen_dongcheon.py $W/facades
 /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
   --python scripts/scenery/build_scenery.py -- --work $W --out public/scenery
 ```
@@ -149,6 +151,21 @@ npx @gltf-transform/cli copy public/scenery/trees.glb $W/trees_raw.glb
 python3 scripts/scenery/zelkova.py -- --src $W/trees_raw.glb --leaf $W/zelkova_leaves.png --out $W/trees_new.glb
 npx @gltf-transform/cli webp $W/trees_new.glb $W/trees_webp.glb --quality 88
 npx @gltf-transform/cli draco $W/trees_webp.glb public/scenery/trees.glb
+```
+
+### 동천관(대학원) (2026-09-29 촬영)
+
+현장 사진 3장(정면·북서쪽·현관 박공)과 OSM 윤곽(약 78 × 37 m)을 보고 동천관을 새로 모델링했습니다. 현관이 북쪽 광장을 보고, 이오니아식 기둥 8개·'東泉館' 프리즈·십자 원형창 박공·우물반자 → 유리 커튼월 → 3층 붉은 벽돌 날개 → 양 끝 박공동(흰 귓돌·돌출창·원형 메달리온), 녹색 동판 지붕, 난간 두른 테라스, 현관 앞 검은 화강암 알 조형물과 반송 둔덕까지 있습니다. 외벽 무늬는 `gen_dongcheon.py`가 그리고, 사진으로 고친 `campus.glb`에 `dongcheon_update.py`로 끼워 넣습니다(옛 `bld_side_e`를 지우고 `bld_dongcheon`을 넣음). 자리는 `sitePlan.ts`의 `bld_dongcheon`, 앞마당·길은 `forecourt`·`crossE`입니다.
+
+```bash
+python3 scripts/scenery/gen_dongcheon.py $W/facades
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
+  --python scripts/scenery/build_scenery.py -- --work $W --out $W/out --only campus --dongcheon $W/dongcheon.glb
+npx @gltf-transform/cli copy public/scenery/campus.glb $W/campus_raw.glb
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
+  --python scripts/scenery/dongcheon_update.py -- --src $W/campus_raw.glb --dongcheon $W/dongcheon.glb --out $W/campus_new.glb
+npx @gltf-transform/cli webp $W/campus_new.glb $W/campus_webp.glb --quality 88
+npx @gltf-transform/cli draco $W/campus_webp.glb public/scenery/campus.glb
 ```
 
 `photo_update.py`는 Blender 4.2에서 돌립니다(`pip install bpy==4.2.0` 파이썬 모듈도 됩니다). 이미 고친 `campus.glb`에 다시 돌리면 조형물이 두 벌 생기니, 사진으로 고치기 전 파일(`git show 5bcbb68:public/scenery/campus.glb`)에서 시작하세요.

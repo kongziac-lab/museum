@@ -189,8 +189,10 @@ export function Site({ plan, mats }: { plan: SitePlan; mats: SiteMaterials }) {
     // 대로: 차도(아스팔트) · 가운데 보행로와 화단 · 보도
     const z0 = plazaS;
     asphalt.push(rect(medianX, roadX, z0, roadS, 0.012), rect(-roadX, -medianX, z0, roadS, 0.012));
-    // 광장 남쪽 끝을 가로지르는 길 (회전 교차로 대신) — 양옆 동천관·바우어관 앞에서 끝난다
-    asphalt.push(rect(-(walkX + 21), walkX + 21, z0, z0 + 12, 0.011));
+    // 광장 남쪽 끝을 가로지르는 길 (회전 교차로 대신) — 서쪽은 바우어관 앞에서 끝나고, 동쪽은 동천관 앞마당을 따라간다
+    asphalt.push(rect(-(walkX + 21), plan.crossE, z0, z0 + 12, 0.011));
+    const [fx0, fx1, fz0, fz1] = plan.forecourt;
+    brick.push(rect(fx0, fx1, fz0, fz1, 0.013));
     brick.push(rect(-1.6, 1.6, z0 + 12, roadS, 0.013));
     grass.push(rect(1.6, medianX, z0 + 12, roadS, 0.014), rect(-medianX, -1.6, z0 + 12, roadS, 0.014));
     for (const s of [-1, 1]) {
@@ -214,6 +216,9 @@ export function Site({ plan, mats }: { plan: SitePlan; mats: SiteMaterials }) {
       for (let z = z0 + 16; z < roadS - 2; z += 9) paint.push(rect(mid - 0.07, mid + 0.07, z, z + 4.5, 0.02));
     }
     for (let x = -walkX; x < walkX; x += 1.1) paint.push(rect(x, x + 0.55, z0 + 3.5, z0 + 8.5, 0.02));
+    // 동천관 현관 앞 건널목
+    const dx = (fx0 + fx1) / 2;
+    for (let z = z0 + 0.6; z < z0 + 11.5; z += 1.1) paint.push(rect(dx - 2.5, dx + 2.5, z, z + 0.55, 0.02));
 
     return {
       brick: merge(brick),
