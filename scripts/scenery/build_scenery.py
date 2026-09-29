@@ -837,6 +837,70 @@ def tri(name, pts, uvs, mat, parent):
     return ob
 
 
+def plant_prop(prop, parent, x, y, z, s, rot=0.0):
+    """광장 소품(prop_*: 반송·향나무·표석)을 건물 안으로 옮겨 심는다 (메시를 복사해 자리를 굽는다 → 재질별로 합쳐진다)."""
+    mtx = Matrix.Translation((x, y, z)) @ Matrix.Rotation(rot, 4, "Z") @ Matrix.Scale(s, 4)
+    for ch in prop.children:
+        if ch.type != "MESH":
+            continue
+        c = ch.copy()
+        c.data = ch.data.copy()
+        c.data.transform(mtx @ ch.matrix_basis)
+        c.matrix_basis = Matrix.Identity(4)
+        c.name = f"{parent.name}_{ch.name}"
+        bpy.context.collection.objects.link(c)
+        c.parent = parent
+
+
+def build_jeonsan(F, hedge, props):
+    """정보전산원(전산원) — 사용자가 남쪽에서 찍은 사진(IMG_4039, 2026-09-29) + OSM 윤곽(약 31 × 28 m).
+    원점 = 정면(남쪽, 동천관 쪽) 아래 가운데. 정면은 Blender −Y.
+    붉은 벽돌 3층, 1·2층 벽을 덮은 담쟁이(벽 8 cm 앞 투명 잎 그림 한 겹 → 입체감·그림자),
+    가운데 칸 유리창 + 회색 금속 차양 아래 유리문, 흰 깊은 처마 + 주홍 기와 모임지붕,
+    화강암 계단과 양옆 벽돌 턱·산울타리·다듬은 반송."""
+    ed = building("bld_edu")
+    front = lit_material("js_front", f"{F}/js_front.jpg")
+    side = lit_material("js_side", f"{F}/js_side.jpg")
+    ivy_f = lit_material("js_front_ivy", f"{F}/js_front_ivy.png", alpha=True)
+    ivy_s = lit_material("js_side_ivy", f"{F}/js_side_ivy.png", alpha=True)
+    for mat in (ivy_f, ivy_s):
+        mat.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.75
+    panel = plain_material("js_panel", (0.36, 0.4, 0.45), rough=0.45, metal=0.3)
+    eave = plain_material("js_eave", (0.82, 0.82, 0.8), rough=0.7)
+    roof_terra = plain_material("roof_terracotta", (0.42, 0.13, 0.06), rough=0.7)
+    granite = plain_material("js_granite", (0.5, 0.49, 0.46), rough=0.85)
+    brick = plain_material("js_brick", (0.3, 0.085, 0.055), rough=0.9)
+    W, D, H = 15.0, 28.0, 12.0  # 반폭, 깊이, 처마 밑 높이
+    wall("js_front", (-W, 0), (W, 0), 0, H, front, ed)
+    wall("js_east", (W, 0), (W, D), 0, H, side, ed)
+    wall("js_back", (W, D), (-W, D), 0, H, side, ed)
+    wall("js_west", (-W, D), (-W, 0), 0, H, side, ed)
+    o = 0.08  # 담쟁이 한 겹
+    wall("js_front_ivy", (-W - o, -o), (W + o, -o), 0, H, ivy_f, ed)
+    wall("js_east_ivy", (W + o, -o), (W + o, D + o), 0, H, ivy_s, ed)
+    wall("js_back_ivy", (W + o, D + o), (-W - o, D + o), 0, H, ivy_s, ed)
+    wall("js_west_ivy", (-W - o, D + o), (-W - o, -o), 0, H, ivy_s, ed)
+    # 깊은 흰 처마(1.4 m) + 주홍 기와 모임지붕
+    slab("js_eave", -W - 1.4, W + 1.4, -1.4, D + 1.4, H, H + 0.45, eave, ed)
+    hip_roof("js_roof", -W - 1.4, W + 1.4, -1.4, D + 1.4, H + 0.45, H + 4.4, roof_terra, ed, overhang=0.12)
+    # 가운데 유리문 위 회색 금속 차양 (9.2 m 폭, 3.2 m 앞으로)
+    slab("js_canopy", -4.6, 4.6, -3.2, 0, 3.95, 5.15, panel, ed)
+    # 화강암 계단: 문 앞 층계참(0.7 m) → 다섯 단, 양옆 낮은 벽돌 턱
+    slab("js_landing", -7.2, 7.2, -3.4, 0, 0, 0.7, granite, ed)
+    for i in range(5):
+        slab(f"js_step{i}", -6.6, 6.6, -3.4 - (i + 1) * 0.4, -3.4 - i * 0.4, 0, 0.7 - (i + 1) * 0.14, granite, ed)
+    for sx in (-1, 1):
+        x0, x1 = sorted((sx * 6.6, sx * 7.3))
+        slab(f"js_cheek{sx:+d}", x0, x1, -5.4, -3.4, 0, 0.75, brick, ed)
+        slab(f"js_cheek_cap{sx:+d}", x0 - 0.05, x1 + 0.05, -5.45, -3.35, 0.75, 0.85, granite, ed)
+        # 계단 양옆 산울타리 + 다듬은 반송
+        x0, x1 = sorted((sx * 7.8, sx * 14.8))
+        h = slab(f"js_hedge{sx:+d}", x0, x1, -5.5, -1.2, 0, 1.15, hedge, ed, bevel=0.25)
+        box_uv(h, 1.5)
+        plant_prop(props["pine"], ed, sx * 10.2, -2.2, 1.0, 1.15, sx * 0.8)
+        plant_prop(props["ball"], ed, sx * 7.9, -0.9, 0.0, 0.7, sx)
+
+
 def build_dongcheon(F, stone, roof_green, hedge, rock, props):
     """동천관(東泉館, 대학원) — 사용자가 찍은 사진 3장 + OSM 윤곽(78 × 37 m)을 따른 실측 m.
     원점 = 가운데 현관 축, 박공동 정면 선(y=0). 정면(북쪽, 분수 광장 쪽)은 Blender −Y.
@@ -974,17 +1038,7 @@ def build_dongcheon(F, stone, roof_green, hedge, rock, props):
     ob.parent = dc
 
     def plant(kind, x, y, z, s, rot=0.0):
-        mtx = Matrix.Translation((x, y, z)) @ Matrix.Rotation(rot, 4, "Z") @ Matrix.Scale(s, 4)
-        for ch in props[kind].children:
-            if ch.type != "MESH":
-                continue
-            c = ch.copy()
-            c.data = ch.data.copy()
-            c.data.transform(mtx @ ch.matrix_basis)
-            c.matrix_basis = Matrix.Identity(4)
-            c.name = f"dc_{kind}_{ch.name}"
-            bpy.context.collection.objects.link(c)
-            c.parent = dc
+        plant_prop(props[kind], dc, x, y, z, s, rot)
 
     plant("pine", 0.4, cy + 0.3, 0.9, 1.35, 0.6)
     plant("ball", 8.2, -12.5, FL + 0.1, 0.75, 0.4)  # 조형물 옆 둥근 향나무
@@ -1277,13 +1331,6 @@ def build_campus():
     for i in range(10):  # 계단 (너비 4.5 m, 반원 앞에서 아래로)
         slab(f"adams_step{i}", -2.25, 2.25, -16 - (i + 1) * 0.8, -16 - i * 0.8, 0, 5 - i * 0.5, paving, ad)
 
-    # ── 전산교육원(정보전산원) — 광장 동쪽 가장자리, 약 28 × 30 m 3층 붉은 벽돌 + 주황 기와 모임지붕 ──
-    ed = building("bld_edu")
-    ed_floors = photo_material("photo_edu_floors", f"{F}/main_floors.jpg")
-    roof_terra = plain_material("roof_terracotta", (0.42, 0.13, 0.06), rough=0.7)
-    box_walls("photo_edu", -14, 14, 0, 30, 0, 9.56, ed_floors, ed, tile=(1.38, 6.37))  # 3층 (창 두 층 무늬 1.5장)
-    hip_roof("edu_roof", -14, 14, 0, 30, 9.56, 14.5, roof_terra, ed, overhang=0.9)
-
     # ── 계명한학촌 (도서관과 채플 사이 비탈) — 돌 기단 + 흰 벽·나무 기둥 + 짙은 기와 모임지붕 한옥 세 채 ──
     hk = building("bld_hanok")
     plaster = plain_material("hanok_wall", (0.78, 0.74, 0.66), rough=0.9)
@@ -1395,13 +1442,18 @@ def build_campus():
     e.parent = gt
 
     build_dongcheon(F, stone, roof_green, hedge, rock, {"pine": tp, "ball": tb, "rock": rk})
+    build_jeonsan(F, hedge, {"pine": tp, "ball": tb, "rock": rk})
 
     roots = [o.name for o in bpy.data.objects if o.type == "EMPTY" and o.parent is None and o.name.startswith(("bld_", "prop_"))]
     for n in roots:
         join_by_material(bpy.data.objects[n])
-    if "--dongcheon" in opts:  # 동천관만 따로 (Draco 없이) → dongcheon_update.py 가 지금 campus.glb 에 끼워 넣는다
-        dc = bpy.data.objects["bld_dongcheon"]
-        export(opts["--dongcheon"], [dc, *dc.children_recursive], draco=False)
+    if "--export" in opts:  # 고친 건물만 따로 (Draco 없이) → swap_buildings.py 가 지금 campus.glb 에 끼워 넣는다
+        names, path = opts["--export"].split("=")
+        objs = []
+        for n in names.split(","):
+            root = bpy.data.objects[n]
+            objs += [root, *root.children_recursive]
+        export(path, objs, draco=False)
         return
     export(os.path.join(OUT, "campus.glb"), [o for o in bpy.data.objects])
     if "--preview" in opts:

@@ -5,7 +5,7 @@
 <img src="docs/title.png" width="49%"> <img src="docs/gallery.png" width="49%">
 
 - 3D 전시장을 불러오는 동안에는 **훈민정음 반포 580돌 · 한글날 기념식 100돌**(1446·1926 → 2026)을 기리는 로딩 화면이 나옵니다. 파랑·빨강 두 판에 옛 글자와 ‘가갸날’ 글자가 흐르고, 불러온 만큼 000 → 100 을 센 뒤 위로 걷히며 정문 첫 화면이 나옵니다.
-- **정문**(흰 열주) → 가운데 화단이 있는 **대로** → 헤링본 벽돌 **광장**(화강암 뚜껑 벽돌 화단·다듬은 반송·둥근 향나무·표석·비석) → 창립 120주년 기념 **분수** → **동산도서관** 순서로 걷습니다. 분수 동쪽에 **전산교육원**, 그 뒤로 **행소관(본관)**, 도서관 뒤 북서쪽 궁산 기슭(광장보다 약 42 m 높은 곳)에 실제 크기의 **아담스채플**, 그 아래 비탈에 **계명한학촌** 두 무리, 서쪽에 **의양관**이 있습니다. 위치는 캠퍼스 안내도와 OpenStreetMap(분수 기준 실제 방위·거리)에 맞췄고, 정문~광장 대로만 짧게 줄였습니다.
+- **정문**(흰 열주) → 가운데 화단이 있는 **대로** → 헤링본 벽돌 **광장**(화강암 뚜껑 벽돌 화단·다듬은 반송·둥근 향나무·표석·비석) → 창립 120주년 기념 **분수** → **동산도서관** 순서로 걷습니다. 분수 동쪽에 담쟁이 덮인 **정보전산원**(현관이 남쪽 **동천관(대학원)**을 본다), 그 뒤로 **행소관(본관)**, 도서관 뒤 북서쪽 궁산 기슭(광장보다 약 42 m 높은 곳)에 실제 크기의 **아담스채플**, 그 아래 비탈에 **계명한학촌** 두 무리, 서쪽에 **의양관**이 있습니다. 위치는 캠퍼스 안내도와 OpenStreetMap(분수 기준 실제 방위·거리)에 맞췄고, 정문~광장 대로만 짧게 줄였습니다.
 - 작품은 분수를 둘러싼 산책로 안쪽에 **대상 → 최우수상 → 우수상 → 장려상** 순서로 서 있어, 어느 작품을 보든 뒤로 분수와 건물이 보입니다. 부문이 바뀌는 곳에는 표지판이 있습니다.
 - **스크롤·화면 밀기·‹ › 버튼·← → 키** 중 무엇으로든 다음 작품 앞까지 걸어가 멈춥니다. 키를 누르고 있을 필요가 없습니다.
 - 아래 **작품 띠**나 **작품 목록**에서 원하는 작품을 누르면 그 작품 앞으로 바로 걸어갑니다.
@@ -116,8 +116,9 @@ npm run dev
 | `scripts/scenery/prep_facades.py` | 건물 사진의 원근을 바로잡고 하늘을 지운 외벽 텍스처 |
 | `scripts/scenery/gen_textures.py` | 헤링본 포장·화단 벽돌·화강암·아스팔트·회양목·먼 산 숲 재질 (광장 사진 색 기준) |
 | `scripts/scenery/gen_chapel.py` | 아담스채플 외벽 무늬 (측랑·채광층·탑·가운데 박공·돔 드럼) |
+| `scripts/scenery/gen_jeonsan.py` | 정보전산원 외벽 무늬 (벽돌·창살 창·띠창 + 따로 그린 담쟁이 잎 층) |
 | `scripts/scenery/gen_dongcheon.py` | 동천관(대학원) 외벽 무늬 (날개·유리 커튼월·박공동·돌출창·'東泉館' 프리즈·현관 박공) |
-| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(도서관·행소관·아담스채플·전산교육원·동천관·한학촌·정문·반송·향나무·표석) |
+| `scripts/scenery/build_scenery.py` | Blender로 `fountain.glb`(분수, 그늘 굽기) · `trees.glb` · `campus.glb`(도서관·행소관·아담스채플·정보전산원·동천관·한학촌·정문·반송·향나무·표석) |
 
 ```bash
 W=scenery-src   # 작업 폴더 (저장소에 넣지 않음)
@@ -126,6 +127,7 @@ python3 scripts/scenery/prep_facades.py $W/kmu $W/facades   # $W/kmu 에 건물 
 python3 scripts/scenery/gen_textures.py public/scenery/tex
 python3 scripts/scenery/gen_chapel.py $W/facades
 python3 scripts/scenery/gen_dongcheon.py $W/facades
+python3 scripts/scenery/gen_jeonsan.py $W/facades
 /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
   --python scripts/scenery/build_scenery.py -- --work $W --out public/scenery
 ```
@@ -153,17 +155,22 @@ npx @gltf-transform/cli webp $W/trees_new.glb $W/trees_webp.glb --quality 88
 npx @gltf-transform/cli draco $W/trees_webp.glb public/scenery/trees.glb
 ```
 
-### 동천관(대학원) (2026-09-29 촬영)
+### 동천관(대학원) · 정보전산원 (2026-09-29 촬영)
 
-현장 사진 3장(정면·북서쪽·현관 박공)과 OSM 윤곽(약 78 × 37 m)을 보고 동천관을 새로 모델링했습니다. 현관이 북쪽 광장을 보고, 이오니아식 기둥 8개·'東泉館' 프리즈·십자 원형창 박공·우물반자 → 유리 커튼월 → 3층 붉은 벽돌 날개 → 양 끝 박공동(흰 귓돌·돌출창·원형 메달리온), 녹색 동판 지붕, 난간 두른 테라스, 현관 앞 검은 화강암 알 조형물과 반송 둔덕까지 있습니다. 외벽 무늬는 `gen_dongcheon.py`가 그리고, 사진으로 고친 `campus.glb`에 `dongcheon_update.py`로 끼워 넣습니다(옛 `bld_side_e`를 지우고 `bld_dongcheon`을 넣음). 자리는 `sitePlan.ts`의 `bld_dongcheon`, 앞마당·길은 `forecourt`·`crossE`입니다.
+현장 사진을 보고 두 건물을 새로 모델링했습니다.
+- **동천관(대학원)**: 사진 3장(정면·북서쪽·현관 박공)과 OSM 윤곽(약 78 × 37 m). 현관이 북쪽 광장을 보고, 이오니아식 기둥 8개·'東泉館' 프리즈·십자 원형창 박공·우물반자 → 유리 커튼월 → 3층 붉은 벽돌 날개 → 양 끝 박공동(흰 귓돌·돌출창·원형 메달리온), 녹색 동판 지붕, 난간 두른 테라스, 현관 앞 검은 화강암 알 조형물과 반송 둔덕. 외벽 무늬는 `gen_dongcheon.py`.
+- **정보전산원**: 남쪽에서 찍은 정면 사진(IMG_4039)과 OSM 윤곽(약 31 × 28 m). 현관이 남쪽 동천관을 보고, 붉은 벽돌 3층 벽을 담쟁이가 덮고(벽 8 cm 앞에 투명 잎 그림 한 겹 → 입체감·그림자) 창 둘레만 깎여 있습니다. 1층 흰 창살 창, 3층 띠창, 가운데 유리창과 회색 금속 차양, 깊은 흰 처마와 주홍 기와 모임지붕, 화강암 계단·산울타리·반송, 가로지르는 길까지 벽돌 길. 외벽 무늬는 `gen_jeonsan.py`.
+
+사진으로 고친 `campus.glb`를 처음부터 다시 만들지 않고 `swap_buildings.py`로 두 건물만 바꿔 끼웁니다(옛 `bld_side_e`는 지움). 자리는 `sitePlan.ts`의 `bld_dongcheon`·`bld_edu`, 앞마당·길은 `courts`입니다.
 
 ```bash
 python3 scripts/scenery/gen_dongcheon.py $W/facades
-/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
-  --python scripts/scenery/build_scenery.py -- --work $W --out $W/out --only campus --dongcheon $W/dongcheon.glb
+python3 scripts/scenery/gen_jeonsan.py $W/facades
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup --python scripts/scenery/build_scenery.py -- \
+  --work $W --out $W/out --only campus --export bld_dongcheon,bld_edu=$W/buildings.glb
 npx @gltf-transform/cli copy public/scenery/campus.glb $W/campus_raw.glb
-/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
-  --python scripts/scenery/dongcheon_update.py -- --src $W/campus_raw.glb --dongcheon $W/dongcheon.glb --out $W/campus_new.glb
+/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup --python scripts/scenery/swap_buildings.py -- \
+  --src $W/campus_raw.glb --add $W/buildings.glb --drop bld_side_e --out $W/campus_new.glb
 npx @gltf-transform/cli webp $W/campus_new.glb $W/campus_webp.glb --quality 88
 npx @gltf-transform/cli draco $W/campus_webp.glb public/scenery/campus.glb
 ```

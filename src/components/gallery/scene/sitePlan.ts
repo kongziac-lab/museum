@@ -5,8 +5,8 @@ import type { GalleryLayout } from "@/lib/gallery";
  * 캠퍼스 소개 영상·광장 사진·캠퍼스 안내도와 OpenStreetMap 건물 윤곽·학교 공식 지도 표시(분수 기준 방위·거리)로 맞췄다.
  * 정문~광장 대로만 실제(약 340 m)보다 줄였고, 나머지는 실제 위치다.
  *  - 도서관 남쪽 벽: 분수 북쪽 64 m
- *  - 전산교육원(정보전산원): 분수 동쪽 40~71 m, 남 21 ~ 북 7 m, 3층
- *  - 행소관(본관): 분수 동쪽 117~195 m 평지, 정면은 남쪽 (광장에서는 전산교육원 뒤)
+ *  - 정보전산원(전산원): 분수 동쪽 44~75 m, 남 24 ~ 북 −4 m, 3층 담쟁이 벽돌, 현관이 남쪽(동천관 쪽)을 본다
+ *  - 행소관(본관): 분수 동쪽 117~195 m 평지, 정면은 남쪽 (광장에서는 전산원 뒤)
  *  - 아담스채플: 가운데 박공 발치가 북서 316° 345 m, 광장보다 약 42 m 높은 궁산 기슭, 긴 면이 남남동(155°)을 본다, 약 78 × 24 m
  *  - 계명한학촌: 두 무리 — 북서 333° 181 m(10~15 m 높은 비탈), 316° 228 m(채플 바로 아래, 약 20 m) / 의양관: 서 292° 210 m, 비탈 시작
  *  - 동천관(대학원): 대로 동쪽, 약 78 × 37 m, 정면(현관)이 북쪽 광장을 본다 — 실제는 분수 남동 x 36~114, z 138~175 m.
@@ -71,8 +71,8 @@ export interface SitePlan {
   gateZ: number;
   /** 광장 남쪽을 가로지르는 길의 동쪽 끝 (동천관 앞을 지난다) */
   crossE: number;
-  /** 동천관 앞 벽돌 마당 [x0, x1, z0, z1] */
-  forecourt: [number, number, number, number];
+  /** 벽돌 마당·길 [x0, x1, z0, z1]: 동천관 앞마당, 전산원 앞 길 */
+  courts: [number, number, number, number][];
   buildings: Placement[];
   planters: Planter[];
   /** 광장 가로수 (격자 틀) */
@@ -110,7 +110,7 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     const a = (bearing * Math.PI) / 180;
     return Math.atan2(Math.sin(a), -Math.cos(a));
   };
-  const east = Math.max(R + 23, 40); // 전산교육원 서쪽 벽 (작품 원이 커지면 함께 밀려난다)
+  const east = Math.max(R + 23, 40); // 전산원 서쪽 처마 (작품 원이 커지면 함께 밀려난다)
   const chapel = at(316, 345);
   const hanokE = at(333, 181);
   const hanokW = at(316, 228);
@@ -118,12 +118,13 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
   // 동천관: 가로지르는 길(광장 남쪽 끝 + 12 m) 앞 25 m 마당 너머가 박공동 정면, 서쪽 끝은 실제처럼 대로에서 약 19 m
   const crossN = plazaS + 12;
   const dongcheon = { x: 77, z: crossN + 25 };
+  const edu = { x: east + 17, z: 22 }; // 전산원 정면 가운데 (실제 중심 x 59, 정면 z 24)
   const buildings: Placement[] = [
     { node: "bld_gate", x: 0, z: gateZ, rot: 0, w: 64, d: 6 },
     { node: "bld_library", x: 0, z: plazaN - 2, rot: 0, w: 54, d: 32 },
-    // 전산교육원: 광장 동쪽 가장자리, 정면이 광장(서쪽)을 본다 (모델 28 m 폭 × 18 m 깊이 → 실제 약 28 × 31 m)
-    { node: "bld_edu", x: east, z: 7, rot: -Math.PI / 2, w: 28, d: 31 },
-    // 행소관(본관): 전산교육원 뒤 동쪽 평지, 정면은 남쪽
+    // 정보전산원: 광장 동쪽, 현관이 남쪽(동천관)을 본다. 모델 30 × 28 m(처마 32.8 × 30.8), 앞 계단·산울타리 5.5 m
+    { node: "bld_edu", x: edu.x, z: edu.z, rot: 0, w: 33, d: 30, front: 6 },
+    // 행소관(본관): 전산원 뒤 동쪽 평지, 정면은 남쪽
     { node: "bld_main", x: east + 116, z: 3, rot: 0, w: 78.5, d: 16 },
     // 동천관(대학원): 현관이 북쪽 광장을 본다. 모델은 폭 78 m(테라스 79 m), 박공동 정면에서 뒤로 37 m, 앞으로 계단·둔덕 24 m
     { node: "bld_dongcheon", x: dongcheon.x, z: dongcheon.z, rot: Math.PI, w: 80, d: 37, front: 24 },
@@ -203,7 +204,11 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     walkX: 19,
     gateZ,
     crossE: dongcheon.x + 42,
-    forecourt: [dongcheon.x - 40, dongcheon.x + 40, crossN, dongcheon.z - 2],
+    courts: [
+      [dongcheon.x - 40, dongcheon.x + 40, crossN, dongcheon.z - 2],
+      // 전산원 계단 앞에서 가로지르는 길까지 곧게 (사진 IMG_4039)
+      [edu.x - 7.5, edu.x + 7.5, edu.z, plazaS],
+    ],
     buildings,
     planters,
     gratedTrees,
@@ -265,6 +270,7 @@ export function blockedBySite(plan: SitePlan, x: number, z: number, margin = 2.5
   if (Math.abs(x) < plan.plazaX + margin - 4 && z < plan.plazaS + margin && z > plan.plazaN - 36) return true;
   if (Math.abs(x) < plan.walkX + margin && z >= plan.plazaS - 2 && z < plan.roadS + 8) return true;
   if (x > -(plan.walkX + 21) - margin && x < plan.crossE + margin && z > plan.plazaS - margin && z < plan.plazaS + 12 + margin) return true;
+  for (const [x0, x1, z0, z1] of plan.courts) if (x > x0 - margin && x < x1 + margin && z > z0 - margin && z < z1 + margin) return true;
   for (const p of plan.pads) if (Math.hypot(x - p.x, z - p.z) < p.r + margin) return true;
   for (const b of plan.buildings) {
     const dx = x - b.x;
