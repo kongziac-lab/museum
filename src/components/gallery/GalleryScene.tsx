@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { WALK, crossesLoop, offStop, stopDistance, stopIndex, useGallery, type GalleryLayout } from "@/lib/gallery";
+import { AUTO, WALK, crossesLoop, offStop, stopDistance, stopIndex, useGallery, type GalleryLayout } from "@/lib/gallery";
 import type { Quality } from "./scene/common";
 import { Atmosphere } from "./scene/Atmosphere";
 import { Site, useSiteMaterials } from "./scene/Grounds";
@@ -66,12 +66,15 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
       move.current = { goal, cap: slow ? Math.max(WALK.loopSpeed, span / 4) : Infinity };
     }
     // 번호(t)가 아니라 걸은 거리(m)로 따라간다 — 진입로·고리처럼 길이가 다른 구간을 지나도 속도가 튀지 않게
+    // 자동 관람은 영상처럼 천천히 걷는다
     if (dt > 0) {
+      const auto = useGallery.getState().autoplay;
       const m0 = L.metresAt(tc);
       const m1 = L.metresAt(goal);
-      let m = THREE.MathUtils.damp(m0, m1, 2.4, dt);
-      if (Number.isFinite(move.current.cap)) {
-        const cap = move.current.cap * dt;
+      let m = THREE.MathUtils.damp(m0, m1, auto ? AUTO.ease : 2.4, dt);
+      const top = auto ? Math.min(move.current.cap, AUTO.speed) : move.current.cap;
+      if (Number.isFinite(top)) {
+        const cap = top * dt;
         m = m0 + THREE.MathUtils.clamp(m - m0, -cap, cap);
       }
       tc = Math.abs(m - m1) < 0.004 ? goal : L.tAtMetres(m);

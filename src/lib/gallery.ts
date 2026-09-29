@@ -39,6 +39,25 @@ export const WALK = {
   pathWidth: 2.8,
 } as const;
 
+/** 자동 관람 (손대지 않아도 한 작품씩 걸어가 머문다) */
+export const AUTO = {
+  /** 작품 앞에 머무는 시간 (ms) — 설명이 길면 글자 수만큼 조금 더 */
+  dwell: 6500,
+  dwellPerChar: 40,
+  dwellMax: 11000,
+  /** 걷는 최고 속도 (m/s) — 수동(한 걸음에 휙)보다 천천히, 영상처럼 */
+  speed: 5,
+  /** 따라가는 빠르기 (수동은 2.4) */
+  ease: 1.1,
+  /** ?auto 로 연 전시(행사장 화면)에서 아무도 만지지 않으면 이만큼 뒤에 다시 자동 관람 (ms) */
+  kioskIdle: 45000,
+} as const;
+
+export function dwellFor(art: ArtworkSource | undefined) {
+  const extra = (art?.description?.length ?? 0) * AUTO.dwellPerChar;
+  return Math.min(AUTO.dwell + extra, AUTO.dwellMax);
+}
+
 export const RING = {
   /** 작품이 도는 원의 최소 반지름 (분수 잔디 화단 반폭 9 m, 모서리 12.7 m + 작품 여유) */
   minRadius: 17,
@@ -340,6 +359,11 @@ interface GalleryState {
 
   listOpen: boolean;
   toggleList: (v?: boolean) => void;
+
+  /** 자동 관람 중인지 */
+  autoplay: boolean;
+  /** 지금 작품 앞에 머물기 시작한 때(performance.now)와 머무는 시간 — 진행 막대용. 걷는 중이면 null */
+  autoDwell: { at: number; ms: number } | null;
 }
 
 export const useGallery = create<GalleryState>((set, get) => ({
@@ -371,7 +395,36 @@ export const useGallery = create<GalleryState>((set, get) => ({
 
   listOpen: false,
   toggleList: (v) => set((s) => ({ listOpen: v ?? !s.listOpen })),
+
+  autoplay: false,
+  autoDwell: null,
 }));
+
+/** 자동 관람 시작. 걷는 중이었으면 가까운 작품에 서서 거기부터 머문다. */
+export function playAuto() {
+  const s = useGallery.getState();
+  if (!s.arts.length) return;
+  if (!s.started || s.target < 0) {
+    s.start();
+  } else {
+    s.setTarget(Math.round(s.target));
+  }
+  useGallery.setState({ autoplay: true, autoDwell: null });
+}
+
+/** 자동 관람 멈춤 (보는 사람이 직접 움직이면 부른다) */
+export function pauseAuto() {
+  if (useGallery.getState().autoplay) useGallery.setState({ autoplay: false, autoDwell: null });
+}
+
+/** 자동 관람이 다음 작품으로 (원 위라면 마지막 다음은 분수를 돌아 첫 작품, 이어 돌지 못하면 처음으로 되돌아간다) */
+export function autoAdvance() {
+  const s = useGallery.getState();
+  const n = s.arts.length;
+  const next = Math.round(s.target) + 1;
+  if (!canLoop(n) && next > n - 1) s.setTarget(0);
+  else s.setTarget(next);
+}
 
 /**
  * 작품 i 로 곧장 이동 (작품 목록·아래 작품 줄·작품 누르기·Home/End·'처음으로'). i = -1 은 입구.
@@ -379,6 +432,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
  * — 마지막 작품에서 첫 작품을 고르면 되감지 않고 분수를 돌아 앞으로 이어 걷는다.
  */
 export function goTo(i: number) {
+  pauseAuto();
   const s = useGallery.getState();
   if (!s.started) useGallery.setState({ started: true });
   const n = s.arts.length;
@@ -410,6 +464,7 @@ export function goTo(i: number) {
  * 진입로를 걸어 들어오는 중(카메라가 아직 원에 닿기 전)에 뒤로 가면 입구 쪽이다.
  */
 export function step(d: 1 | -1) {
+  pauseAuto();
   const s = useGallery.getState();
   if (!s.started) useGallery.setState({ started: true });
   s.setTarget(Math.round(s.target) + d);
@@ -450,6 +505,7 @@ let closeToken = 0;
 
 /** 크게 보기 열기 (누른 그 순간에 불러야 브라우저가 기록을 받아 준다) */
 export function openViewer(i: number) {
+  pauseAuto();
   const s = useGallery.getState();
   if (s.detail === null && typeof window !== "undefined") {
     try {

@@ -6,7 +6,7 @@ import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
-import { buildLayout, canLoop, closeViewer, goTo, moveDetail, offStop, openViewer, step, stopIndex, useGallery, viewerPopped, type GalleryLayout } from "@/lib/gallery";
+import { AUTO, autoAdvance, buildLayout, canLoop, closeViewer, dwellFor, goTo, moveDetail, offStop, openViewer, pauseAuto, playAuto, step, stopIndex, useGallery, viewerPopped, type GalleryLayout } from "@/lib/gallery";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
 import { ArtViewer } from "./ArtViewer";
 import { Splash } from "./Splash";
@@ -56,6 +56,7 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 
     const onWheel = (e: WheelEvent) => {
       if (blocked() || onUi(e)) return;
+      pauseAuto();
       const s = useGallery.getState();
       const dy = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
       const step = THREE.MathUtils.clamp(dy * 0.0035, -0.5, 0.5);
@@ -69,6 +70,7 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
     let drag: { x: number; y: number; last: number; id: number; moved: boolean } | null = null;
     const onDown = (e: PointerEvent) => {
       if (blocked() || e.button > 0 || onUi(e)) return;
+      pauseAuto(); // 화면을 만지면 자동 관람을 멈춘다
       drag = { x: e.clientX, y: e.clientY, last: 0, id: e.pointerId, moved: false };
     };
     const onMove = (e: PointerEvent) => {
@@ -141,6 +143,129 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref]);
 }
 
+/* ───────────────────────── 자동 관람 ───────────────────────── */
+
+/**
+ * 자동 관람: 작품 앞에 도착하면 dwellFor 만큼 머문 뒤 다음 작품으로 걷는다 (마지막 다음은 분수를 돌아 첫 작품).
+ * 크게 보기·작품 목록이 열려 있는 동안에는 쉬고, 닫히면 그 작품에서 다시 머문다.
+ * 주소에 ?auto 를 붙이면(행사장 화면) 불러오자마자 시작하고, 아무도 만지지 않은 채 AUTO.kioskIdle 이 지나면 다시 시작한다.
+ */
+function useAutoTour() {
+  useEffect(() => {
+    const kiosk = new URLSearchParams(window.location.search).has("auto");
+    let lastInput = performance.now();
+    let readyAt = 0;
+    const touched = () => {
+      lastInput = performance.now();
+    };
+    let at = Number.NaN; // 머물고 있는 작품 번호
+    const tick = () => {
+      const s = useGallery.getState();
+      const now = performance.now();
+      if (kiosk && s.loaded && s.sceneryReady && s.arts.length > 0) {
+        // 첫 시작: 기념 화면이 걷히고 정문 제목을 잠깐 보여 준 뒤
+        if (!readyAt) readyAt = now;
+        const firstRun = !s.started && !s.autoplay && now - readyAt > 6000 && lastInput < readyAt;
+        const idle = !s.autoplay && now - Math.max(lastInput, readyAt) > AUTO.kioskIdle;
+        if (firstRun || idle) {
+          if (s.detail !== null) closeViewer();
+          if (s.listOpen) s.toggleList(false);
+          playAuto();
+          return;
+        }
+      }
+      if (!s.autoplay) return;
+      if (!s.started) {
+        pauseAuto();
+        return;
+      }
+      const n = s.arts.length;
+      // 느리게 다가서는 마지막 몇 cm 는 머무는 시간에 넣는다
+      const arrived = s.target >= 0 && Math.abs(s.current - s.target) < 0.04;
+      if (s.detail !== null || s.listOpen || !arrived) {
+        at = Number.NaN;
+        if (s.autoDwell) useGallery.setState({ autoDwell: null });
+        return;
+      }
+      // 카메라가 바퀴 번호를 옮겨 세도(t ↔ t ± n) 같은 작품이면 이어서 머문다
+      const here = stopIndex(Math.round(s.target), n);
+      if (here !== at || !s.autoDwell) {
+        at = here;
+        useGallery.setState({ autoDwell: { at: now, ms: dwellFor(s.arts[here]) } });
+        return;
+      }
+      if (now - s.autoDwell.at >= s.autoDwell.ms) {
+        at = Number.NaN;
+        useGallery.setState({ autoDwell: null });
+        autoAdvance();
+      }
+    };
+    const id = window.setInterval(tick, 100);
+    const opts = { capture: true, passive: true } as const;
+    window.addEventListener("pointerdown", touched, opts);
+    window.addEventListener("keydown", touched, opts);
+    window.addEventListener("wheel", touched, opts);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("pointerdown", touched, opts);
+      window.removeEventListener("keydown", touched, opts);
+      window.removeEventListener("wheel", touched, opts);
+    };
+  }, []);
+
+  // 자동 관람 중에는 화면이 꺼지지 않게 (지원하는 브라우저만)
+  const autoplay = useGallery((s) => s.autoplay);
+  useEffect(() => {
+    if (!autoplay) return;
+    type Lock = { release: () => Promise<void> };
+    const wl = (navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<Lock> } }).wakeLock;
+    if (!wl) return;
+    let lock: Lock | null = null;
+    let alive = true;
+    const acquire = () => {
+      if (document.visibilityState !== "visible") return;
+      wl.request("screen")
+        .then((l) => {
+          if (alive) lock = l;
+          else l.release().catch(() => {});
+        })
+        .catch(() => {});
+    };
+    acquire();
+    // 탭을 다녀오면 풀리므로 다시 건다
+    document.addEventListener("visibilitychange", acquire);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", acquire);
+      lock?.release().catch(() => {});
+    };
+  }, [autoplay]);
+}
+
+/** ▶ 자동 관람 / ❚❚ 멈춤 — 머무는 동안 아래에 남은 시간이 차오른다 */
+function AutoButton() {
+  const autoplay = useGallery((s) => s.autoplay);
+  const dwell = useGallery((s) => s.autoDwell);
+  return (
+    <button
+      onClick={() => (autoplay ? pauseAuto() : playAuto())}
+      aria-pressed={autoplay}
+      className={`${btn} relative overflow-hidden px-4 py-2 text-sm font-bold`}
+    >
+      {autoplay ? "❚❚ 멈춤" : "▶ 자동 관람"}
+      {autoplay && dwell && (
+        <motion.span
+          key={dwell.at}
+          className="absolute bottom-0 left-0 h-[3px] bg-stone-800/70"
+          initial={{ width: "0%" }}
+          animate={{ width: "100%" }}
+          transition={{ duration: dwell.ms / 1000, ease: "linear" }}
+        />
+      )}
+    </button>
+  );
+}
+
 /* ───────────────────────── 작은 UI 조각 ───────────────────────── */
 
 function AwardChip({ award, small }: { award?: string; small?: boolean }) {
@@ -193,6 +318,13 @@ function Intro() {
                 className="min-w-[9.5rem] rounded-full bg-white px-8 py-3.5 text-lg font-bold text-sky-900 shadow-xl transition hover:bg-sky-50 active:scale-95 disabled:opacity-50"
               >
                 {ready ? "관람 시작" : `준비 중 ${Math.round(progress)}%`}
+              </button>
+              <button
+                onClick={playAuto}
+                disabled={!ready || count === 0}
+                className="rounded-full border border-white/70 px-6 py-3.5 text-base font-bold text-white backdrop-blur-sm transition hover:bg-white/15 disabled:opacity-50"
+              >
+                ▶ 자동 관람
               </button>
               <button
                 onClick={() => toggleList(true)}
@@ -312,6 +444,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
   const target = useGallery((s) => s.target);
   const current = useGallery((s) => s.current);
   const toggleList = useGallery((s) => s.toggleList);
+  const autoplay = useGallery((s) => s.autoplay);
   const idx = Math.round(target);
   const n = arts.length;
   const stop = stopIndex(idx, n);
@@ -325,7 +458,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
   useEffect(() => {
     if (leftFirst) setMovedOnce(true);
   }, [leftFirst]);
-  const moved = movedOnce || leftFirst || !(stopIndex(current, n) === 0 && current > -0.5);
+  const moved = movedOnce || leftFirst || autoplay || !(stopIndex(current, n) === 0 && current > -0.5);
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   if (!started) return null;
   return (
@@ -334,6 +467,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
       <div className="flex items-start justify-between gap-2">
         <button
           onClick={() => {
+            pauseAuto();
             useGallery.setState({ started: false });
             useGallery.getState().setTarget(-1);
           }}
@@ -341,9 +475,12 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
         >
           {info.제목 ?? "수상작 전시"}
         </button>
-        <button onClick={() => toggleList(true)} className={`${btn} px-4 py-2 text-sm font-bold`}>
-          작품 목록
-        </button>
+        <div className="flex gap-2">
+          <AutoButton />
+          <button onClick={() => toggleList(true)} className={`${btn} px-4 py-2 text-sm font-bold`}>
+            작품 목록
+          </button>
+        </div>
       </div>
 
       <AnimatePresence>
@@ -499,6 +636,7 @@ function useViewerHistory() {
 export function OpenGallery() {
   useExhibition();
   useViewerHistory();
+  useAutoTour();
   const arts = useGallery((s) => s.arts);
   const open = useGallery((s) => s.detail !== null);
   // 불러오는 동안(기념 화면이 3D 를 가림)과 크게 보기 중에는 천천히 그린다
