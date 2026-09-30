@@ -11,11 +11,12 @@
  *   2) public/exhibition.json             — 전시관이 읽는 작품 목록 + 캡션 + 전시 정보
  *
  * 수상부문이 하나도 적혀 있지 않으면 '전시 모드'다: 대표 작품 없이, 전시정보.json 의 전시순서에 따라
- *   "영문순"(기본) — 영문 이름 알파벳 순. 머리글자를 이어 7점 안팎씩 묶어 'A – B' 같은 구간(group)을 만든다
- *   "국적별"      — 같은 나라끼리 (3점 이상인 나라만 따로, 나머지는 '여러 나라')
- *   "목록순"      — CSV 순서 그대로, 묶음 없음
+ *   "가나다순"(기본) — 한글 이름 가나다 순, 구역 표지 없음
+ *   "영문순"        — 영문 이름 알파벳 순, 구역 표지 없음
+ *   "국적별"        — 같은 나라끼리 (3점 이상인 나라만 따로, 나머지는 '여러 나라'), 나라마다 표지
+ *   "목록순"        — CSV 순서 그대로, 구역 표지 없음
  * 영문이름 열이 비어 있으면 한글 이름을 로마자(국어의 로마자 표기법)로 바꿔 쓴다.
- * 수상부문을 채우면 '시상 모드'로 바뀌어 부문 순서대로 다시 걸리고(부문 안에서는 영문순), 가장 높은 부문의 첫 작품이 대표 작품이 된다.
+ * 수상부문을 채우면 '시상 모드'로 바뀌어 부문 순서대로 다시 걸리고(부문 안에서는 전시순서를 따른다), 가장 높은 부문의 첫 작품이 대표 작품이 된다.
  *
  * `npm run dev` / `npm run build` 전에 자동으로 실행된다 (predev / prebuild).
  * 직접 실행: `npm run exhibition`
@@ -58,14 +59,12 @@ const DEFAULT_INFO = {
   안내제목: "전시관에 오신 것을 환영합니다",
   안내문: "작품 가까이 다가가면 수상자와 작품 설명을 볼 수 있습니다.",
   수상부문순서: ["대상", "최우수상", "우수상", "장려상", "입선"],
-  전시순서: "영문순",
+  전시순서: "가나다순",
 };
 
 /** 전시 모드에서 나라별 묶음을 따로 세우는 최소 점수 (이보다 적은 나라는 '여러 나라'로 모은다) */
 const MIN_GROUP = 3;
 const MIXED_GROUP = "여러 나라";
-/** 영문순 구간 하나에 담을 작품 수 (대략) */
-const ZONE_SIZE = 7;
 /** 3D 텍스처·썸네일 긴 변 (px) */
 const TEX_PX = 1024;
 const THUMB_PX = 320;
@@ -260,41 +259,15 @@ function romanize(ko) {
   return words.map(word).join(" ");
 }
 
-/** 알파벳 순 비교 (대소문자·악센트 무시) */
+/** 가나다 순 비교 (한글 이름, 같으면 CSV 순서) · 알파벳 순 비교 (영문 이름, 대소문자·악센트 무시) */
+const byKorean = (a, b) => a.name.localeCompare(b.name, "ko") || a.seq - b.seq;
 const byEnglish = (a, b) => a.en.localeCompare(b.en, "en", { sensitivity: "base" }) || a.seq - b.seq;
-const initialOf = (e) => (e.en.normalize("NFD").replace(/[^A-Za-z]/g, "").charAt(0) || "#").toUpperCase();
-
-/**
- * 영문순: 알파벳 순으로 늘어놓고, 머리글자를 차례로 이어 ZONE_SIZE 점쯤 되면 한 구간으로 끊는다 ('A – B', 'S').
- * 마지막 구간이 너무 작으면 앞 구간에 붙인다.
- */
-function groupByInitial(entries) {
-  entries.sort(byEnglish);
-  const letters = [];
-  for (const e of entries) {
-    const L = initialOf(e);
-    if (letters.at(-1)?.L !== L) letters.push({ L, items: [] });
-    letters.at(-1).items.push(e);
-  }
-  const zones = [];
-  let cur = null;
-  for (const l of letters) {
-    if (!cur) cur = { from: l.L, to: l.L, items: [] };
-    cur.to = l.L;
-    cur.items.push(...l.items);
-    if (cur.items.length >= ZONE_SIZE) {
-      zones.push(cur);
-      cur = null;
-    }
-  }
-  if (cur) {
-    if (zones.length && cur.items.length < ZONE_SIZE / 2) {
-      zones.at(-1).to = cur.to;
-      zones.at(-1).items.push(...cur.items);
-    } else zones.push(cur);
-  }
-  for (const z of zones) for (const e of z.items) e.group = z.from === z.to ? z.from : `${z.from} – ${z.to}`;
-  return entries;
+/** 전시순서 → 비교 함수 (목록순·국적별은 CSV 순서) */
+function orderOf(info) {
+  const o = norm(info.전시순서);
+  if (o === "영문순") return byEnglish;
+  if (o === "목록순" || o === "국적별") return (a, b) => a.seq - b.seq;
+  return byKorean;
 }
 
 /**
@@ -370,16 +343,16 @@ async function main() {
   // 수상부문이 하나라도 적혀 있으면 시상 모드, 아니면 전시 모드
   const mode = entries.some((e) => e.award) ? "awards" : "exhibition";
   if (mode === "awards") {
-    // 같은 부문 안에서는 전시순서가 영문순(기본)이면 알파벳 순, 아니면 CSV 순서
-    const within = ["목록순", "국적별"].includes(norm(info.전시순서)) ? (a, b) => a.seq - b.seq : byEnglish;
+    // 같은 부문 안에서는 전시순서(기본 가나다순)
+    const within = orderOf(info);
     entries.sort((a, b) => rank(a.award) - rank(b.award) || within(a, b));
     entries.forEach((e) => (e.group = e.award || ""));
   } else if (norm(info.전시순서) === "국적별") {
     groupByNation(entries);
-  } else if (norm(info.전시순서) === "목록순") {
-    entries.forEach((e) => (e.group = ""));
   } else {
-    groupByInitial(entries);
+    // 가나다순(기본)·영문순·목록순: 한 줄로 이어 걸고 구역 표지는 세우지 않는다
+    entries.sort(orderOf(info));
+    entries.forEach((e) => (e.group = ""));
   }
 
   // 출력 폴더 비우고 다시 복사 (영문 파일명으로 — URL 인코딩 문제 방지)

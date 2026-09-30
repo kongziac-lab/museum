@@ -56,6 +56,8 @@ export const AUTO = {
   speed: 5,
   /** 따라가는 빠르기 (수동은 2.4) */
   ease: 1.1,
+  /** 한 바퀴 끝나 기념 화면이 걷힌 뒤 정문 화면을 보여 주는 시간 (ms) — 그다음 다시 자동 관람 */
+  introHold: 5000,
   /** ?auto 로 연 전시(행사장 화면)에서 아무도 만지지 않으면 이만큼 뒤에 다시 자동 관람 (ms) */
   kioskIdle: 45000,
 } as const;
@@ -399,8 +401,17 @@ interface GalleryState {
   /** 하늘에서 보기 (광장 위로 올라가 작품 원 전체를 내려다본다) */
   overview: boolean;
 
+  /** 카메라를 걷지 않고 목표 자리로 바로 옮긴 횟수 (CameraRig 가 바뀌면 순간 이동) */
+  cut: number;
+  /** 기념(로딩) 화면을 띄운 횟수 — 0 은 처음 불러올 때, 자동 관람이 한 바퀴 끝날 때마다 하나씩 늘어 다시 띄운다 */
+  splashRun: number;
+  /** 기념 화면이 떠 있는지 (걷히는 움직임이 다 끝나면 false) */
+  splashUp: boolean;
+
   /** 자동 관람 중인지 */
   autoplay: boolean;
+  /** 자동 관람이 한 바퀴 끝나 기념 화면 → 정문 화면을 거쳐 다시 시작하려고 기다리는 중 */
+  autoReplay: boolean;
   /** 지금 작품 앞에 머물기 시작한 때(performance.now)와 머무는 시간 — 진행 막대용. 걷는 중이면 null */
   autoDwell: { at: number; ms: number } | null;
 }
@@ -442,7 +453,12 @@ export const useGallery = create<GalleryState>((set, get) => ({
 
   overview: false,
 
+  cut: 0,
+  splashRun: 0,
+  splashUp: true,
+
   autoplay: false,
+  autoReplay: false,
   autoDwell: null,
 }));
 
@@ -475,7 +491,12 @@ export function playAuto() {
   } else {
     s.setTarget(Math.round(s.target));
   }
-  useGallery.setState({ autoplay: true, autoDwell: null, overview: false });
+  useGallery.setState({ autoplay: true, autoReplay: false, autoDwell: null, overview: false });
+}
+
+/** 카메라를 걷지 않고 t 자리로 바로 옮긴다 (화면이 가려져 있을 때만 쓴다) */
+export function jumpTo(t: number) {
+  useGallery.setState((s) => ({ target: t, current: t, cut: s.cut + 1 }));
 }
 
 /** 자동 관람 멈춤 (보는 사람이 직접 움직이면 부른다) */

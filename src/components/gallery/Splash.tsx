@@ -15,6 +15,8 @@ import type { Commemoration } from "@/lib/types";
 
 /** 너무 빨리 불러와도 이만큼은 보여 준다 (글자가 다 올라오게) */
 const MIN_MS = 2600;
+/** 자동 관람이 한 바퀴 끝나 다시 띄울 때는 위에서 내려와 이만큼 보여 준다 (내려오는 0.9초 포함) */
+export const REPLAY_MS = 7000;
 /** 배경을 끝내 못 불러와도 이만큼 지나면 걷는다 (정문 화면의 '준비 중'이 이어받는다) */
 const MAX_MS = 30000;
 
@@ -181,7 +183,7 @@ function Badge({ ring, delay }: { ring: string; delay: number }) {
   );
 }
 
-export function Splash() {
+export function Splash({ replay = false }: { replay?: boolean }) {
   const loaded = useGallery((s) => s.loaded);
   const sceneryReady = useGallery((s) => s.sceneryReady);
   const info = useGallery((s) => s.info);
@@ -217,9 +219,9 @@ export function Splash() {
   // 100 까지 다 센 뒤에 걷는다 (너무 빨리 불러와도 MIN_MS 는 보여 준다)
   useEffect(() => {
     if (!ready || n < 100) return;
-    const id = window.setTimeout(() => setDone(true), Math.max(0, MIN_MS - (performance.now() - t0)) + 300);
+    const id = window.setTimeout(() => setDone(true), Math.max(0, (replay ? REPLAY_MS : MIN_MS) - (performance.now() - t0)) + 300);
     return () => window.clearTimeout(id);
-  }, [ready, n, t0]);
+  }, [ready, n, t0, replay]);
 
   const D = 0.15;
   const items: Commemoration[] = info.기념?.length
@@ -237,15 +239,21 @@ export function Splash() {
     "KEIMYUNG UNIVERSITY",
   ].filter(Boolean) as string[];
 
+  // 떠 있는 동안을 알린다 (자동 관람이 한 바퀴 끝나 다시 띄웠을 때, 다 걷힌 뒤에 다시 걷기 시작하게)
+  useEffect(() => {
+    useGallery.setState({ splashUp: true });
+  }, []);
+
   return (
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={() => useGallery.setState({ splashUp: false })}>
       {!done && (
         <motion.div
           key="splash"
           role="status"
           aria-label={`${title} ${sub}을 불러오고 있습니다`}
           className="absolute inset-0 z-[60] flex flex-col overflow-hidden bg-[#06122b] text-white [word-break:keep-all] [--badge:clamp(80px,min(24vw,12vh),158px)] [--num:clamp(60px,min(24vw,10.5vh),176px)] md:[--badge:clamp(96px,min(11vw,18vh),172px)] md:[--num:clamp(64px,min(13.5vw,22vh),220px)]"
-          initial={{ y: 0 }}
+          initial={{ y: replay ? "-101%" : 0 }}
+          animate={{ y: 0, transition: { duration: 0.9, ease: [0.7, 0, 0.3, 1] } }}
           exit={{ y: "-101%", transition: { duration: 0.9, ease: [0.7, 0, 0.3, 1] } }}
         >
           {/* 위: 학당 이름 · 한글날 */}

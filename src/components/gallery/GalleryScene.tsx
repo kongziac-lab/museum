@@ -31,9 +31,20 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
   const sky = useRef({ k: 0, orbit: 0 });
   const aerial = useMemo(() => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), tmp: new THREE.Vector3() }), []);
 
+  const lastCut = useRef(useGallery.getState().cut);
+
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.1);
     const L = layout;
+    // 순간 이동 (자동 관람이 한 바퀴 끝나 기념 화면이 가린 사이 정문으로)
+    const cut = useGallery.getState().cut;
+    if (cut !== lastCut.current) {
+      lastCut.current = cut;
+      t.current = useGallery.getState().target;
+      move.current = { goal: Number.NaN, cap: Infinity };
+      smoothLook.current = null;
+      sky.current.k = 0;
+    }
     const n = L.stops.length;
     const loops = L.loopMetres !== null;
     let target = useGallery.getState().target;

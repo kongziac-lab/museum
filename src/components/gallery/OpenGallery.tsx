@@ -6,7 +6,7 @@ import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
-import { AUTO, autoAdvance, buildLayout, canLoop, closeViewer, colorOf, dwellFor, goTo, moveDetail, offStop, openViewer, pauseAuto, playAuto, setOverview, step, stopIndex, useGallery, viewerPopped, type GalleryLayout } from "@/lib/gallery";
+import { AUTO, autoAdvance, buildLayout, canLoop, closeViewer, colorOf, dwellFor, goTo, jumpTo, moveDetail, offStop, openViewer, pauseAuto, playAuto, setOverview, step, stopIndex, useGallery, viewerPopped, type GalleryLayout } from "@/lib/gallery";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
 import { ArtViewer } from "./ArtViewer";
 import { Splash } from "./Splash";
@@ -147,7 +147,10 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 /* ───────────────────────── 자동 관람 ───────────────────────── */
 
 /**
- * 자동 관람: 작품 앞에 도착하면 dwellFor 만큼 머문 뒤 다음 작품으로 걷는다 (마지막 다음은 분수를 돌아 첫 작품).
+ * 자동 관람: 작품 앞에 도착하면 dwellFor 만큼 머문 뒤 다음 작품으로 걷는다.
+ * 마지막 작품까지 보면 완전히 처음으로 — 기념 화면(580돌·100돌)이 위에서 내려와 덮고, 그사이 카메라는 정문으로 옮기고,
+ * 기념 화면이 걷히면 정문 화면을 AUTO.introHold 동안 보여 준 뒤 다시 걸어 들어간다. 이렇게 끝없이 되풀이한다.
+ * 기다리는 동안 누가 화면을 만지면 되풀이를 멈추고 그 사람에게 맡긴다.
  * 크게 보기·작품 목록이 열려 있는 동안에는 쉬고, 닫히면 그 작품에서 다시 머문다.
  * 주소에 ?auto 를 붙이면(행사장 화면) 불러오자마자 시작하고, 아무도 만지지 않은 채 AUTO.kioskIdle 이 지나면 다시 시작한다.
  */
@@ -156,19 +159,43 @@ function useAutoTour() {
     const kiosk = new URLSearchParams(window.location.search).has("auto");
     let lastInput = performance.now();
     let readyAt = 0;
+    let firstDone = false;
+    let cutAt = 0; // 기념 화면이 다 내려와 덮으면 카메라를 정문으로
+    let replay = false; // 기념 화면 → 정문 화면을 거쳐 다시 자동 관람하려고 기다리는 중
+    let introSince = 0; // 기념 화면이 다 걷힌 때 (정문 화면을 보여 주기 시작한 때)
     const touched = () => {
       lastInput = performance.now();
+      if (replay) {
+        replay = false;
+        useGallery.setState({ autoReplay: false });
+      }
     };
     let at = Number.NaN; // 머물고 있는 작품 번호
     const tick = () => {
       const s = useGallery.getState();
       const now = performance.now();
+      if (cutAt && now >= cutAt) {
+        cutAt = 0;
+        jumpTo(-1);
+      }
+      if (replay && !cutAt && !s.splashUp) {
+        if (!introSince) introSince = now;
+        if (now - introSince >= AUTO.introHold) {
+          replay = false;
+          useGallery.setState({ autoReplay: false });
+          if (s.detail === null && !s.listOpen) {
+            playAuto();
+            return;
+          }
+        }
+      }
       if (kiosk && s.loaded && s.sceneryReady && s.arts.length > 0) {
         // 첫 시작: 기념 화면이 걷히고 정문 제목을 잠깐 보여 준 뒤
         if (!readyAt) readyAt = now;
-        const firstRun = !s.started && !s.autoplay && now - readyAt > 6000 && lastInput < readyAt;
-        const idle = !s.autoplay && now - Math.max(lastInput, readyAt) > AUTO.kioskIdle;
+        const firstRun = !firstDone && !s.started && !s.autoplay && now - readyAt > 6000 && lastInput < readyAt;
+        const idle = !s.autoplay && !replay && now - Math.max(lastInput, readyAt) > AUTO.kioskIdle;
         if (firstRun || idle) {
+          firstDone = true;
           if (s.detail !== null) closeViewer();
           if (s.listOpen) s.toggleList(false);
           playAuto();
@@ -197,6 +224,14 @@ function useAutoTour() {
       }
       if (now - s.autoDwell.at >= s.autoDwell.ms) {
         at = Number.NaN;
+        if (here === n - 1 && n > 1) {
+          // 한 바퀴 끝 → 완전히 처음(기념 화면)부터
+          useGallery.setState((st) => ({ autoplay: false, autoReplay: true, autoDwell: null, overview: false, started: false, splashRun: st.splashRun + 1 }));
+          cutAt = now + 1000;
+          replay = true;
+          introSince = 0;
+          return;
+        }
         useGallery.setState({ autoDwell: null });
         autoAdvance();
       }
@@ -214,8 +249,8 @@ function useAutoTour() {
     };
   }, []);
 
-  // 자동 관람 중에는 화면이 꺼지지 않게 (지원하는 브라우저만)
-  const autoplay = useGallery((s) => s.autoplay);
+  // 자동 관람 중에는(다시 시작하려고 기다리는 동안도) 화면이 꺼지지 않게 (지원하는 브라우저만)
+  const autoplay = useGallery((s) => s.autoplay || s.autoReplay);
   useEffect(() => {
     if (!autoplay) return;
     type Lock = { release: () => Promise<void> };
@@ -670,6 +705,7 @@ export function OpenGallery() {
   useViewerHistory();
   useAutoTour();
   const arts = useGallery((s) => s.arts);
+  const splashRun = useGallery((s) => s.splashRun);
   const open = useGallery((s) => s.detail !== null);
   // 불러오는 동안(기념 화면이 3D 를 가림)과 크게 보기 중에는 천천히 그린다
   const loading = useGallery((s) => !(s.loaded && s.sceneryReady));
@@ -710,7 +746,7 @@ export function OpenGallery() {
       <Hud layout={layout} inert={open} />
       <ListOverlay />
       <ArtViewer />
-      <Splash />
+      <Splash key={splashRun} replay={splashRun > 0} />
     </div>
   );
 }
