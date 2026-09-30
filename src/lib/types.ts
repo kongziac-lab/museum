@@ -25,6 +25,8 @@ export interface ArtworkSource {
   /** ── 수상작 캡션 (수상작/수상작목록.csv) ── */
   /** 수상자 이름 */
   name?: string;
+  /** 영문 이름 (영문이름 열, 비어 있으면 한글 이름을 로마자로) */
+  nameEn?: string;
   /** 국적 */
   nationality?: string;
   /** 수상 부문 (대상, 최우수상 …) */
@@ -33,8 +35,13 @@ export interface ArtworkSource {
   awardRank?: number;
   /** 작품 설명 */
   description?: string;
-  /** 입구 정면에 거는 대표 작품 */
+  /** 입구 정면에 거는 대표 작품 (시상 모드에서만) */
   hero?: boolean;
+  /** 묶음: 시상 모드는 수상 부문, 전시 모드(수상부문을 비워 둔 때)는 나라 — 묶음이 바뀌는 곳에 표지를 세운다 */
+  group?: string;
+  /** 3D 액자에 거는 텍스처 (긴 변 1024 px) · 작품 띠·목록·멀리 있는 액자용 썸네일 (긴 변 320 px) */
+  tex?: string;
+  thumb?: string;
   /** 원본 이미지 크기 (px, 빌드 스크립트가 읽음) */
   width?: number;
   height?: number;
@@ -58,6 +65,8 @@ export interface ExhibitionInfo {
   안내제목?: string;
   안내문?: string;
   수상부문순서?: string[];
+  /** 수상부문을 비워 둔 전시 모드의 순서: "영문순"(기본, 알파벳 구간으로 묶는다) · "국적별" · "목록순"(CSV 순서) */
+  전시순서?: string;
   /** 배경 사진 출처 표기 (첫 화면 아래에 작게) */
   배경출처?: string;
   배경출처링크?: string;

@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "한글 이름 꾸미기 대회 · 수상작 전시관",
-  description: "한글 이름 꾸미기 대회 수상작을 3D 가상 전시관에서 감상하세요.",
+  title: "한글 이름 꾸미기 대회 · 작품 전시관",
+  description: "한글 이름 꾸미기 대회 작품을 3D 가상 전시관에서 감상하세요.",
   icons: {
     icon: "/img/icon.png",
   },

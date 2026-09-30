@@ -172,7 +172,8 @@ export function sitePlan(layout: GalleryLayout): SitePlan {
     if (zb <= plazaN + 6) continue;
     // 가장자리 나무 사이, 낮은 벽 앞에 광장을 보고 앉는 벤치 (사진처럼 앞에 안쪽 줄 나무)
     benches.push([-edge - 0.6, zb], [edge + 0.6, zb]);
-    if (Math.abs(zb) < R + 22) gratedTrees.push([-inner, zb], [inner, zb]);
+    // 안쪽 줄은 작품 원(회랑이면 바깥 줄 작품 + 여유)이 닿지 않을 때만
+    if (Math.abs(zb) < R + 22 && (layout.double ? R + 2.6 + 2.2 : R + 4) < inner) gratedTrees.push([-inner, zb], [inner, zb]);
   }
   // 봉경관 앞마당 가로수: 광장 쪽 가장자리 한 줄, 동쪽 끝 앞 큰 나무 (사진 IMG_4042 오른쪽)
   for (let z = 30; z < 92; z += 10) gratedTrees.push([-(plazaX + 10), z]);

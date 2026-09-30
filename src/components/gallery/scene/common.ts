@@ -56,35 +56,83 @@ export function rng(seed: number) {
 
 /* ───────────────────────── 텍스처 ───────────────────────── */
 
-const texCache = new Map<string, THREE.Texture>();
+/**
+ * 작품 텍스처: 쓰는 곳(액자)마다 빌려 가고 돌려준다. 아무도 안 쓰는 텍스처는 최근 IDLE_KEEP 장만 남기고
+ * GPU 에서 내린다 — 작품이 50점 넘게 걸려도 가까운 몇 점만 선명한 텍스처를 들고 있게.
+ * keep 으로 빌린 것(썸네일)은 내리지 않는다.
+ */
+type TexEntry = { tex: THREE.Texture | null; users: number; keep: boolean; waiters: Set<(t: THREE.Texture) => void>; loading: boolean };
+const texCache = new Map<string, TexEntry>();
+const idle: string[] = [];
+const IDLE_KEEP = 12;
 const loader = new THREE.TextureLoader();
 
-/** 필요할 때만 이미지를 불러온다 (가까운 작품만). */
-export function useLazyTexture(src: string, enabled: boolean) {
-  const [tex, setTex] = useState<THREE.Texture | null>(() => texCache.get(src) ?? null);
+function borrow(src: string, keep: boolean, ready: (t: THREE.Texture) => void) {
+  let e = texCache.get(src);
+  if (!e) {
+    e = { tex: null, users: 0, keep, waiters: new Set(), loading: false };
+    texCache.set(src, e);
+  }
+  e.users++;
+  e.keep ||= keep;
+  const k = idle.indexOf(src);
+  if (k >= 0) idle.splice(k, 1);
+  if (e.tex) ready(e.tex);
+  else {
+    e.waiters.add(ready);
+    if (!e.loading) {
+      e.loading = true;
+      const entry = e;
+      loader.load(
+        src,
+        (t) => {
+          t.colorSpace = THREE.SRGBColorSpace;
+          t.anisotropy = 8;
+          entry.tex = t;
+          entry.loading = false;
+          entry.waiters.forEach((w) => w(t));
+          entry.waiters.clear();
+        },
+        undefined,
+        () => {
+          entry.loading = false;
+        }
+      );
+    }
+  }
+  return () => {
+    const x = texCache.get(src);
+    if (!x) return;
+    x.waiters.delete(ready);
+    x.users = Math.max(0, x.users - 1);
+    if (x.users > 0 || x.keep) return;
+    idle.push(src);
+    while (idle.length > IDLE_KEEP) {
+      const old = idle.shift()!;
+      const o = texCache.get(old);
+      if (o && o.users === 0 && !o.loading) {
+        o.tex?.dispose();
+        texCache.delete(old);
+      }
+    }
+  };
+}
+
+/** 필요할 때만 이미지를 불러온다 (가까운 작품만). enabled 가 꺼지면 돌려주고 null. keep = 내리지 않는다(썸네일). */
+export function useLazyTexture(src: string | undefined, enabled: boolean, keep = false) {
+  const [tex, setTex] = useState<THREE.Texture | null>(() => (src && enabled ? texCache.get(src)?.tex ?? null : null));
   useEffect(() => {
-    if (!enabled || tex) return;
-    const cached = texCache.get(src);
-    if (cached) {
-      setTex(cached);
+    if (!src || !enabled) {
+      setTex(null);
       return;
     }
     let alive = true;
-    loader.load(
-      src,
-      (t) => {
-        t.colorSpace = THREE.SRGBColorSpace;
-        t.anisotropy = 8;
-        texCache.set(src, t);
-        if (alive) setTex(t);
-      },
-      undefined,
-      () => {}
-    );
+    const giveBack = borrow(src, keep, (t) => alive && setTex(t));
     return () => {
       alive = false;
+      giveBack();
     };
-  }, [src, enabled, tex]);
+  }, [src, enabled, keep]);
   return tex;
 }
 

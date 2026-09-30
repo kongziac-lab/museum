@@ -4,6 +4,9 @@
  * 분수가 원점에 있고, 산책로는 그 둘레를 원으로 돈다. 입구 진입로는 남쪽(+z)에서 곧게 들어온다.
  * 작품은 길 안쪽(분수 쪽) 잔디에 서서, 어느 작품을 보든 뒤로 분수가 보인다.
  * 관람객(카메라)은 분수를 왼쪽에 두고 길을 따라 걸으며 작품 앞에 한 점씩 멈춘다.
+ * 작품이 많으면(RING.singleMax 점 넘게) 길 양쪽에 번갈아 세운 '원형 회랑'이 된다: 안쪽 작품은 분수를,
+ * 바깥쪽 작품은 광장 느티나무와 캠퍼스 건물을 등지고, 관람객은 두 줄 사이 길을 걸으며 좌우로 번갈아 본다.
+ * 원이 광장(RING.maxRadius)을 넘지 않게 작품 사이 간격을 줄여 50점 안팎도 광장 안에 든다.
  * 위치는 연속값 t 하나로 표현한다: t = -1 입구, -1 < t < 0 진입로, t = i 는 i번째 작품 앞.
  * 원은 끝없이 이어진다: 마지막 작품(n-1) 다음은 고리 구간(n-1 < t < n)을 지나 첫 작품(t = n)이고,
  * t ≥ 0 에서 t 와 t + n 은 같은 자리다 (바퀴 번호만 다르다). 카메라(CameraRig)는 원 위에서
@@ -12,11 +15,15 @@
 
 import * as THREE from "three";
 import { create } from "zustand";
+import { GROUP_COLORS, awardColor } from "./config";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "./types";
 
 export const WALK = {
-  /** 작품 사이 간격 (m, 길을 따라) */
+  /** 작품 사이 간격 (m, 길을 따라) — 한쪽에만 세울 때 */
   spacing: 8,
+  /** 양쪽에 번갈아 세울 때 한 작품씩의 간격 (한쪽 줄에서는 이 두 배). 원이 광장을 넘으면 minPitch 까지 줄인다 */
+  pitch: 3.4,
+  minPitch: 2.6,
   /** 길 중심에서 작품까지 옆 거리 (m) */
   sideOffset: 2.6,
   /** 작품 앞 몇 m 뒤(길을 따라)에서 보는지 — 비스듬히(약 30°) 봐서 작품 옆으로 분수가 함께 보이게 */
@@ -61,6 +68,10 @@ export function dwellFor(art: ArtworkSource | undefined) {
 export const RING = {
   /** 작품이 도는 원의 최소 반지름 (분수 잔디 화단 반폭 9 m, 모서리 12.7 m + 작품 여유) */
   minRadius: 17,
+  /** 원형 회랑의 가장 큰 반지름 — 바깥 줄 작품이 광장 가장자리 느티나무(분수에서 33 m) 안쪽에 들게 */
+  maxRadius: 28,
+  /** 이 점수까지는 길 안쪽(분수 쪽)에만 한 줄로 세운다 */
+  singleMax: 14,
   /** 입구(정문 앞)에서 원까지 (m) — 정문 → 대로 → 광장을 지나 들어온다 (계명대 성서캠퍼스 축) */
   approach: 106,
 } as const;
@@ -78,8 +89,9 @@ export interface Stop {
   h: number;
   /** 길 위 관람 위치까지의 거리 (호 길이, m) */
   viewDist: number;
-  /** 부문이 바뀌는 첫 작품이면 그 부문 이름 (표지판) */
+  /** 묶음(부문·나라)이 바뀌는 첫 작품이면 그 묶음 이름과 작품 수 (표지판) */
   groupStart?: string;
+  groupCount?: number;
 }
 
 export interface GalleryLayout {
@@ -87,6 +99,10 @@ export interface GalleryLayout {
   length: number;
   /** 산책로 원 반지름 (길 가운데 선) */
   radius: number;
+  /** 길 양쪽에 번갈아 세운 원형 회랑인가 */
+  double: boolean;
+  /** 작품 사이 간격 (m, 길을 따라) */
+  pitch: number;
   /** 진입로 시작점 z (x = 0) */
   entranceZ: number;
   stops: Stop[];
@@ -136,7 +152,7 @@ export function offStop(t: number, layout: GalleryLayout | null) {
   const n = layout.stops.length;
   const u = t % n;
   if (u <= n - 1) return d;
-  return (Math.min(u - (n - 1), n - u) * layout.loopMetres) / WALK.spacing;
+  return (Math.min(u - (n - 1), n - u) * layout.loopMetres) / layout.pitch;
 }
 
 /** 위치 t 에서 작품 i 까지 몇 작품 거리인지 (원을 따라 이어지는 쪽도 센다) */
@@ -150,10 +166,6 @@ function aspectOf(a: ArtworkSource): number {
   return a.width && a.height ? a.width / a.height : 1.414;
 }
 
-/** 작품 i 까지의 원 위 거리 (진입로가 원에 닿은 곳부터, m) */
-function ringDist(i: number) {
-  return WALK.lead + (i + 0.5) * WALK.spacing;
-}
 
 /** 산책로 곡선과 작품 위치를 만든다. */
 export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } = {}): GalleryLayout {
@@ -163,7 +175,15 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
   const lookDrop = opts.portrait ? 0.75 : 0.32;
   const n = Math.max(arts.length, 1);
   // 원 둘레 = 작품이 차지하는 길이 + 마지막 작품과 입구 사이 여유
-  const ringNeeded = ringDist(n - 1) + WALK.spacing * 1.8 + 0.42 * RING.minRadius;
+  const gap = WALK.spacing * 1.8 + 0.42 * RING.minRadius;
+  const double = n > RING.singleMax;
+  // 양쪽에 세울 때: 원이 광장을 넘지 않게 간격을 줄인다 (그래도 넘치면 원이 커진다)
+  const pitch = double
+    ? THREE.MathUtils.clamp((Math.PI * 2 * RING.maxRadius - WALK.lead - gap) / (n - 0.5), WALK.minPitch, WALK.pitch)
+    : WALK.spacing;
+  /** 작품 i 까지의 원 위 거리 (진입로가 원에 닿은 곳부터, m) */
+  const ringDist = (i: number) => WALK.lead + (i + 0.5) * pitch;
+  const ringNeeded = ringDist(n - 1) + gap;
   const radius = Math.max(RING.minRadius, ringNeeded / (Math.PI * 2));
   const entranceZ = radius + RING.approach;
 
@@ -195,15 +215,17 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
     return { p, tan, left };
   };
 
-  let prevAward: string | undefined;
+  let prevGroup: string | undefined;
+  const groupOf = (a: ArtworkSource) => a.group ?? a.award;
   const stops: Stop[] = arts.map((art, i) => {
     const hero = Boolean(art.hero);
     const size = hero ? WALK.heroSize : WALK.size;
     const aspect = aspectOf(art);
     const w = aspect >= 1 ? size : size * aspect;
     const h = aspect >= 1 ? size / aspect : size;
-    // 작품은 모두 길 안쪽(분수 쪽)에 — 작품 뒤로 분수가 보인다
-    const side: 1 | -1 = 1;
+    // 한 줄이면 모두 길 안쪽(분수 쪽)에 — 작품 뒤로 분수가 보인다.
+    // 회랑이면 안쪽(분수를 등진다)과 바깥쪽(느티나무·캠퍼스 건물을 등진다)에 번갈아
+    const side: 1 | -1 = double && i % 2 === 1 ? -1 : 1;
     const artDist = joinDist + ringDist(i);
     const back = hero ? WALK.heroViewBack : WALK.viewBack;
     const { p, left } = at(artDist);
@@ -214,19 +236,33 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
     const view = vp.p.clone().addScaledVector(vp.left, -side * out);
     const yaw = Math.atan2(view.x - center.x, view.z - center.z);
     center.y = WALK.bottom + h / 2;
-    const groupStart = art.award && art.award !== prevAward ? art.award : undefined;
-    prevAward = art.award;
-    return { index: i, art, side, center, yaw, w, h, viewDist: artDist - back, groupStart };
+    const g = groupOf(art);
+    const groupStart = g && g !== prevGroup ? g : undefined;
+    prevGroup = g;
+    const groupCount = groupStart ? arts.slice(i).findIndex((a) => groupOf(a) !== g) : undefined;
+    return {
+      index: i,
+      art,
+      side,
+      center,
+      yaw,
+      w,
+      h,
+      viewDist: artDist - back,
+      groupStart,
+      groupCount: groupCount === undefined ? undefined : groupCount < 0 ? arts.length - i : groupCount,
+    };
   });
 
   const lookTmp = new THREE.Vector3();
   const last = stops.length - 1;
   const loops = canLoop(stops.length);
 
-  /** 작품 i 앞에 선 카메라 자리 (길 바깥쪽으로 비켜선 곳) */
+  /** 작품 i 앞에 선 카메라 자리 (작품 반대쪽으로 비켜선 곳) */
   const standAt = (i: number, target: THREE.Vector3) => {
     const { p, left } = at(stops[i].viewDist);
-    return target.set(p.x - left.x * out, WALK.eye, p.z - left.z * out);
+    const o = out * stops[i].side;
+    return target.set(p.x - left.x * o, WALK.eye, p.z - left.z * o);
   };
   // 고리 구간: 마지막 작품 자리 → 원을 따라 앞으로(분수를 왼쪽에 두고) → 첫 작품 자리
   const loopFrom = new THREE.Vector3();
@@ -311,8 +347,8 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
     const distOf = (i: number) => (i < 0 ? 0 : stops[i]?.viewDist ?? 0);
     const d = THREE.MathUtils.lerp(distOf(i0), distOf(Math.min(i0 + 1, last)), f);
     const { p, tan, left } = at(d);
-    // 작품 앞에서는 길 바깥쪽으로 비켜선다 (걷는 동안 부드럽게)
-    const outOf = (i: number) => (i < 0 || !stops[i] ? 0 : out);
+    // 작품 앞에서는 작품 반대쪽으로 비켜선다 (걷는 동안 부드럽게)
+    const outOf = (i: number) => (i < 0 || !stops[i] ? 0 : out * stops[i].side);
     const lateral = THREE.MathUtils.lerp(outOf(i0), outOf(Math.min(i0 + 1, last)), f);
     outPos.set(p.x - left.x * lateral, WALK.eye, p.z - left.z * lateral);
 
@@ -328,7 +364,7 @@ export function buildLayout(arts: ArtworkSource[], opts: { portrait?: boolean } 
     }
   };
 
-  return { curve, length, radius, entranceZ, stops, pose, at, loopMetres, metresAt, tAtMetres };
+  return { curve, length, radius, double, pitch, entranceZ, stops, pose, at, loopMetres, metresAt, tAtMetres };
 }
 
 /** 관람 상태 (HTML 오버레이와 3D 씬이 함께 쓴다). */
@@ -360,6 +396,9 @@ interface GalleryState {
   listOpen: boolean;
   toggleList: (v?: boolean) => void;
 
+  /** 하늘에서 보기 (광장 위로 올라가 작품 원 전체를 내려다본다) */
+  overview: boolean;
+
   /** 자동 관람 중인지 */
   autoplay: boolean;
   /** 지금 작품 앞에 머물기 시작한 때(performance.now)와 머무는 시간 — 진행 막대용. 걷는 중이면 null */
@@ -371,7 +410,12 @@ export const useGallery = create<GalleryState>((set, get) => ({
   info: {},
   background: null,
   loaded: false,
-  setData: (arts, info, background) => set({ arts, info, background, loaded: true }),
+  setData: (arts, info, background) => {
+    // 묶음(나라) 색은 전시에 나오는 순서대로 정해 둔다 — 3D 표지·명패·작품 띠·목록이 같은 색을 쓴다
+    groupColor.clear();
+    for (const a of arts) if (a.group && !a.award && !groupColor.has(a.group)) groupColor.set(a.group, GROUP_COLORS[groupColor.size % GROUP_COLORS.length]);
+    set({ arts, info, background, loaded: true });
+  },
   sceneryReady: false,
   layout: null,
 
@@ -396,9 +440,31 @@ export const useGallery = create<GalleryState>((set, get) => ({
   listOpen: false,
   toggleList: (v) => set((s) => ({ listOpen: v ?? !s.listOpen })),
 
+  overview: false,
+
   autoplay: false,
   autoDwell: null,
 }));
+
+const groupColor = new Map<string, string>();
+
+/** 작품 색: 수상 부문이 있으면 부문 색, 전시 모드면 묶음(나라) 색 */
+export function colorOf(art: Pick<ArtworkSource, "award" | "group"> | undefined): string {
+  if (!art) return awardColor();
+  if (art.award) return awardColor(art.award);
+  return (art.group && groupColor.get(art.group)) || awardColor();
+}
+
+/** 하늘에서 보기 켜기·끄기 (끄면 서 있던 작품 앞으로 내려온다) */
+export function setOverview(on: boolean) {
+  const s = useGallery.getState();
+  if (on) {
+    pauseAuto();
+    if (!s.started) useGallery.setState({ started: true });
+    if (s.target < 0) goTo(0);
+  }
+  useGallery.setState({ overview: on });
+}
 
 /** 자동 관람 시작. 걷는 중이었으면 가까운 작품에 서서 거기부터 머문다. */
 export function playAuto() {
@@ -409,7 +475,7 @@ export function playAuto() {
   } else {
     s.setTarget(Math.round(s.target));
   }
-  useGallery.setState({ autoplay: true, autoDwell: null });
+  useGallery.setState({ autoplay: true, autoDwell: null, overview: false });
 }
 
 /** 자동 관람 멈춤 (보는 사람이 직접 움직이면 부른다) */
@@ -433,6 +499,7 @@ export function autoAdvance() {
  */
 export function goTo(i: number) {
   pauseAuto();
+  useGallery.setState({ overview: false });
   const s = useGallery.getState();
   if (!s.started) useGallery.setState({ started: true });
   const n = s.arts.length;
@@ -465,6 +532,7 @@ export function goTo(i: number) {
  */
 export function step(d: 1 | -1) {
   pauseAuto();
+  useGallery.setState({ overview: false });
   const s = useGallery.getState();
   if (!s.started) useGallery.setState({ started: true });
   s.setTarget(Math.round(s.target) + d);

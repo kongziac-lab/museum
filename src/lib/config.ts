@@ -43,6 +43,9 @@ export function awardColor(award?: string): string {
   return "#8a817a";
 }
 
+/** 전시 모드 묶음(나라) 색: 묶음 순서대로 돌려 쓴다 — 광장 벽돌·잔디와 어울리는 차분한 색 */
+export const GROUP_COLORS = ["#b5543c", "#3d6f8e", "#6b8f4e", "#8a5a8c", "#c28a2c", "#3f8a82", "#9c4f63", "#5d6b8a"];
+
 /** Structural constants. */
 export const ARCH = {
   wallThickness: 0.34,

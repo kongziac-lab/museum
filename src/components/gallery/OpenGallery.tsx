@@ -6,7 +6,7 @@ import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
 import { awardColor } from "@/lib/config";
-import { AUTO, autoAdvance, buildLayout, canLoop, closeViewer, dwellFor, goTo, moveDetail, offStop, openViewer, pauseAuto, playAuto, step, stopIndex, useGallery, viewerPopped, type GalleryLayout } from "@/lib/gallery";
+import { AUTO, autoAdvance, buildLayout, canLoop, closeViewer, colorOf, dwellFor, goTo, moveDetail, offStop, openViewer, pauseAuto, playAuto, setOverview, step, stopIndex, useGallery, viewerPopped, type GalleryLayout } from "@/lib/gallery";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
 import { ArtViewer } from "./ArtViewer";
 import { Splash } from "./Splash";
@@ -49,7 +49,7 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 
     const blocked = () => {
       const s = useGallery.getState();
-      return !s.started || s.detail !== null || s.listOpen;
+      return !s.started || s.detail !== null || s.listOpen || s.overview;
     };
 
     const onUi = (e: Event) => Boolean((e.target as HTMLElement | null)?.closest?.("button, [data-noswipe]"));
@@ -96,6 +96,7 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
       if (e.key === "Escape") {
         if (s.detail !== null) closeViewer();
         else if (s.listOpen) s.toggleList(false);
+        else if (s.overview) setOverview(false);
         return;
       }
       if (s.listOpen) return;
@@ -250,7 +251,7 @@ function AutoButton() {
     <button
       onClick={() => (autoplay ? pauseAuto() : playAuto())}
       aria-pressed={autoplay}
-      className={`${btn} relative overflow-hidden px-4 py-2 text-sm font-bold`}
+      className={`${btn} relative overflow-hidden whitespace-nowrap px-4 py-2 text-sm font-bold`}
     >
       {autoplay ? "❚❚ 멈춤" : "▶ 자동 관람"}
       {autoplay && dwell && (
@@ -262,6 +263,21 @@ function AutoButton() {
           transition={{ duration: dwell.ms / 1000, ease: "linear" }}
         />
       )}
+    </button>
+  );
+}
+
+/** 하늘에서 보기 / 걸어서 보기 */
+function SkyButton() {
+  const overview = useGallery((s) => s.overview);
+  return (
+    <button
+      onClick={() => setOverview(!overview)}
+      aria-pressed={overview}
+      className={`${btn} h-12 shrink-0 whitespace-nowrap px-4 text-sm font-bold md:h-14 md:px-5`}
+      title={overview ? "작품 앞으로 내려가기" : "광장 위에서 작품 원 전체 보기"}
+    >
+      {overview ? "걸어서 보기" : "하늘에서 보기"}
     </button>
   );
 }
@@ -309,7 +325,7 @@ function Intro() {
           <div className="max-w-xl text-center text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)]">
             {info.상단문구 && <p className="mb-4 text-sm tracking-[0.3em] text-white/85">{info.상단문구}</p>}
             <h1 className="font-display text-4xl font-bold leading-tight md:text-6xl">{info.제목 ?? "한글 이름 꾸미기 대회"}</h1>
-            <p className="mt-3 font-display text-xl text-white/90 md:text-3xl">{info.부제 ?? "수상작 전시"}</p>
+            <p className="mt-3 font-display text-xl text-white/90 md:text-3xl">{info.부제 ?? "작품 전시관"}</p>
             {info.소개문구 && <p className="mt-6 text-base text-white/85 md:text-lg">{info.소개문구}</p>}
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               <button
@@ -357,9 +373,10 @@ function Caption({ layout }: { layout: GalleryLayout | null }) {
   const arts = useGallery((s) => s.arts);
   const current = useGallery((s) => s.current);
   const started = useGallery((s) => s.started);
+  const overview = useGallery((s) => s.overview);
   const idx = stopIndex(current, arts.length);
   const art = arts[idx];
-  const show = started && art && offStop(current, layout) < 0.22;
+  const show = started && !overview && art && offStop(current, layout) < 0.22;
   return (
     <AnimatePresence mode="wait">
       {show && (
@@ -376,7 +393,9 @@ function Caption({ layout }: { layout: GalleryLayout | null }) {
             <div className="min-w-0">
               <AwardChip award={art.award} />
               <h2 className="mt-2 truncate font-display text-2xl font-bold md:text-3xl">{art.name || art.title}</h2>
-              {art.nationality && <p className="mt-0.5 text-sm text-stone-500 md:text-base">{art.nationality}</p>}
+              {(art.nameEn || art.nationality) && (
+                <p className="mt-0.5 truncate text-sm text-stone-500 md:text-base">{[art.nameEn, art.nationality].filter(Boolean).join(" · ")}</p>
+              )}
             </div>
             <span className="shrink-0 pt-1 text-xs tabular-nums text-stone-400">
               {idx + 1} / {arts.length}
@@ -423,14 +442,14 @@ function Filmstrip() {
             refs.current[i] = el;
           }}
           onClick={() => goTo(i)}
-          title={`${a.award} · ${a.name}`}
+          title={[a.award || a.group, a.name].filter(Boolean).join(" · ")}
           className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-lg ring-2 transition ${
             i === idx ? "ring-stone-900" : "ring-transparent opacity-70 hover:opacity-100"
           }`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={a.src} alt={a.name} loading="lazy" className="h-full w-full object-cover" />
-          <span className="absolute inset-x-0 bottom-0 h-1" style={{ background: awardColor(a.award) }} />
+          <img src={a.thumb ?? a.src} alt={a.name} loading="lazy" className="h-full w-full object-cover" />
+          <span className="absolute inset-x-0 bottom-0 h-1" style={{ background: colorOf(a) }} />
         </button>
       ))}
     </div>
@@ -445,6 +464,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
   const current = useGallery((s) => s.current);
   const toggleList = useGallery((s) => s.toggleList);
   const autoplay = useGallery((s) => s.autoplay);
+  const overview = useGallery((s) => s.overview);
   const idx = Math.round(target);
   const n = arts.length;
   const stop = stopIndex(idx, n);
@@ -471,20 +491,31 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
             useGallery.setState({ started: false });
             useGallery.getState().setTarget(-1);
           }}
-          className="pointer-events-auto rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-stone-800 shadow ring-1 ring-black/5 backdrop-blur"
+          className="pointer-events-auto min-w-0 truncate whitespace-nowrap rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-stone-800 shadow ring-1 ring-black/5 backdrop-blur"
         >
-          {info.제목 ?? "수상작 전시"}
+          {info.제목 ?? "작품 전시관"}
         </button>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <AutoButton />
-          <button onClick={() => toggleList(true)} className={`${btn} px-4 py-2 text-sm font-bold`}>
+          <button onClick={() => toggleList(true)} className={`${btn} whitespace-nowrap px-4 py-2 text-sm font-bold`}>
             작품 목록
           </button>
         </div>
       </div>
 
       <AnimatePresence>
-        {!moved && (
+        {overview && (
+          <motion.p
+            key="sky"
+            className="absolute left-1/2 top-16 w-max max-w-[90vw] -translate-x-1/2 rounded-full bg-black/45 px-4 py-2 text-center text-xs text-white backdrop-blur md:top-5 md:text-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            {n}점이 분수를 둘러싸고 있어요 · 작품을 누르면 그 앞으로 내려갑니다
+          </motion.p>
+        )}
+        {!moved && !overview && (
           <motion.p
             className="absolute left-1/2 top-16 w-max max-w-[90vw] -translate-x-1/2 rounded-full bg-black/45 px-4 py-2 text-center text-xs text-white backdrop-blur md:top-5 md:text-sm"
             initial={{ opacity: 0 }}
@@ -502,6 +533,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
           <Caption layout={layout} />
         </div>
         <div className="flex w-full items-center justify-center gap-3">
+          <SkyButton />
           <button
             onClick={() => step(-1)}
             disabled={prevOff}
@@ -534,7 +566,7 @@ function ListOverlay() {
   const groups = useMemo(() => {
     const m: { award: string; items: { a: ArtworkSource; i: number }[] }[] = [];
     arts.forEach((a, i) => {
-      const key = a.award || "기타";
+      const key = a.award || a.group || "전시 작품";
       const g = m.find((x) => x.award === key);
       if (g) g.items.push({ a, i });
       else m.push({ award: key, items: [{ a, i }] });
@@ -561,7 +593,7 @@ function ListOverlay() {
             {groups.map((g) => (
               <section key={g.award} className="mb-8">
                 <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-stone-700">
-                  <span className="h-4 w-1.5 rounded-full" style={{ background: awardColor(g.award) }} />
+                  <span className="h-4 w-1.5 rounded-full" style={{ background: colorOf(g.items[0].a) }} />
                   {g.award} <span className="text-sm font-normal text-stone-400">{g.items.length}점</span>
                 </h3>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -576,11 +608,11 @@ function ListOverlay() {
                     >
                       <div className="aspect-[4/3] overflow-hidden bg-stone-100">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={a.src} alt={a.name} loading="lazy" className="h-full w-full object-contain transition group-hover:scale-[1.03]" />
+                        <img src={a.thumb ?? a.src} alt={a.name} loading="lazy" className="h-full w-full object-contain transition group-hover:scale-[1.03]" />
                       </div>
                       <div className="p-3">
                         <p className="truncate font-bold text-stone-800">{a.name || a.title}</p>
-                        <p className="truncate text-sm text-stone-500">{a.nationality}</p>
+                        <p className="truncate text-sm text-stone-500">{[a.nameEn, a.nationality].filter(Boolean).join(" · ")}</p>
                       </div>
                     </button>
                   ))}

@@ -92,7 +92,8 @@ function Sun({ quality, radius }: { quality: Quality; radius: number }) {
   const gl = useThree((s) => s.gl);
   const dir = useMemo(sunDirection, []);
   // 원이 작으면 원 전체를, 크면 카메라 주변만 그림자 범위로 (넓으면 흐려지므로)
-  const whole = radius + 14 <= 40;
+  // 작품 원(회랑이면 바깥 줄까지)이 다 들어가면 원 전체를 한 번에 — 하늘에서 볼 때도 그림자가 다 있다
+  const whole = radius + 14 <= 44;
   const extent = whole ? radius + 14 : 34;
   const size = quality === "high" ? 4096 : 2048;
   const center = useMemo(() => new THREE.Vector3(), []);

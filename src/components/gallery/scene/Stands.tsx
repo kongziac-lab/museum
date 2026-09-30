@@ -4,8 +4,7 @@ import { useMemo } from "react";
 import { type ThreeEvent } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
-import { awardColor } from "@/lib/config";
-import { WALK, goTo, offStop, openViewer, stopIndex, useGallery, type GalleryLayout, type Stop } from "@/lib/gallery";
+import { WALK, colorOf, goTo, offStop, openViewer, stopIndex, useGallery, type GalleryLayout, type Stop } from "@/lib/gallery";
 import { FONT, SCENERY, fitText, useCanvasTexture, useLazyTexture } from "./common";
 import { useTexture } from "@react-three/drei";
 import type { SitePlan } from "./sitePlan";
@@ -22,8 +21,11 @@ const FRAME = pickFrameStyle("walnut");
 
 export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; near: boolean }) {
   const { art, w, h } = stop;
-  const tex = useLazyTexture(art.src, near);
-  const color = awardColor(art.award);
+  // 썸네일은 늘 걸어 두고(멀리서도 원 둘레 작품이 다 보이게), 가까이 오면 선명한 텍스처로 바꾼다
+  const thumb = useLazyTexture(art.thumb ?? art.src, true, true);
+  const full = useLazyTexture(art.tex ?? art.src, near);
+  const tex = full ?? thumb;
+  const color = colorOf(art);
   const { W: boardW, H: boardH } = frameOuter(FRAME, w, h);
   const pad = SPECS[FRAME].pad;
   const cy = stop.center.y;
@@ -39,21 +41,37 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
       g.fillStyle = color;
       g.fillRect(0, 0, 14, 260);
       g.textBaseline = "alphabetic";
-      if (art.award) {
+      // 시상 모드: 부문 · 이름 · 국적 / 전시 모드: 이름을 크게, 아래에 국적
+      const award = Boolean(art.award);
+      if (award) {
         g.fillStyle = color;
         g.font = `700 54px ${FONT}`;
-        g.fillText(art.award, 50, 80);
+        g.fillText(art.award!, 50, 80);
       }
       g.fillStyle = "#1d1b19";
-      fitText(g, art.name || art.title, 700, 84, 700);
-      g.fillText(art.name || art.title, 50, 172);
-      if (art.nationality) {
-        g.fillStyle = "#6b645c";
-        g.font = `500 44px ${FONT}`;
-        g.fillText(art.nationality, 50, 234);
+      fitText(g, art.name || art.title, 700, award ? 84 : 88, 700);
+      g.fillText(art.name || art.title, 50, award ? 172 : 112);
+      if (award) {
+        if (art.nationality) {
+          g.fillStyle = "#6b645c";
+          g.font = `500 44px ${FONT}`;
+          g.fillText(art.nationality, 50, 234);
+        }
+      } else {
+        // 전시 모드: 영문 이름(알파벳 순으로 걸린다) · 국적
+        if (art.nameEn) {
+          g.fillStyle = "#4f4943";
+          fitText(g, art.nameEn, 600, 46, 700);
+          g.fillText(art.nameEn, 50, 172);
+        }
+        if (art.nationality) {
+          g.fillStyle = "#8a817a";
+          g.font = `500 40px ${FONT}`;
+          g.fillText(art.nationality, 50, 230);
+        }
       }
     },
-    [art.award, art.name, art.title, art.nationality, color]
+    [art.award, art.name, art.nameEn, art.title, art.nationality, color]
   );
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
@@ -114,7 +132,7 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
 
 export function GroupSign({ stop, layout }: { stop: Stop; layout: GalleryLayout }) {
   const label = stop.groupStart ?? "";
-  const color = awardColor(label);
+  const color = colorOf(stop.art);
   const tex = useCanvasTexture(
     600,
     260,
@@ -154,6 +172,75 @@ export function GroupSign({ stop, layout }: { stop: Stop; layout: GalleryLayout 
   );
 }
 
+/* ───────────────────────── 묶음 문 (원형 회랑) ───────────────────────── */
+
+/**
+ * 회랑에서는 길 양쪽에 작품이 서 있어 옆에 표지판 세울 자리가 없으므로, 묶음(나라·부문)이 시작되는 곳에
+ * 길을 가로지르는 가는 문을 세운다. 들보 앞뒤에 묶음 이름과 작품 수 — 다가오는 관람객이 문 아래로 지나간다.
+ */
+export function ZoneArch({ stop, layout }: { stop: Stop; layout: GalleryLayout }) {
+  const label = stop.groupStart ?? "";
+  const count = stop.groupCount ?? 0;
+  const color = colorOf(stop.art);
+  const TW = 1400;
+  const TH = 220;
+  const tex = useCanvasTexture(
+    TW,
+    TH,
+    (g) => {
+      g.fillStyle = "#f6f3ec";
+      g.fillRect(0, 0, TW, TH);
+      g.fillStyle = color;
+      g.fillRect(0, 0, TW, 22);
+      g.fillRect(0, TH - 10, TW, 10);
+      g.textBaseline = "middle";
+      g.textAlign = "center";
+      g.fillStyle = "#1d1b19";
+      const tail = count > 0 ? `  ${count}점` : "";
+      const size = fitText(g, label + tail, 800, 118, TW - 120);
+      const wLabel = g.measureText(label).width;
+      g.font = `700 ${Math.round(size * 0.62)}px ${FONT}`;
+      const wTail = g.measureText(tail).width;
+      g.font = `800 ${size}px ${FONT}`;
+      const wAll = wLabel + wTail;
+      const x0 = TW / 2 - wAll / 2;
+      g.textAlign = "left";
+      g.fillText(label, x0, TH / 2 + 8);
+      if (tail) {
+        g.fillStyle = color;
+        g.font = `700 ${Math.round(size * 0.62)}px ${FONT}`;
+        g.fillText(tail, x0 + wLabel, TH / 2 + 14);
+      }
+    },
+    [label, count, color]
+  );
+  // 이 묶음 첫 작품을 보러 서는 자리 조금 앞, 길 가운데
+  const { p, tan } = layout.at(stop.viewDist - 1.3);
+  const yaw = Math.atan2(-tan.x, -tan.z); // 앞면(+Z)이 다가오는 쪽을 본다
+  const half = WALK.pathWidth / 2 + 0.2;
+  const W = half * 2 + 0.3;
+  const H = W * (TH / TW);
+  const y = 2.62;
+  return (
+    <group position={[p.x, 0, p.z]} rotation={[0, yaw, 0]}>
+      {[-1, 1].map((s) => (
+        <mesh key={s} position={[s * half, (y + H / 2) / 2, 0]} material={frameMat} castShadow>
+          <boxGeometry args={[0.07, y + H / 2, 0.07]} />
+        </mesh>
+      ))}
+      <mesh position={[0, y, 0]} material={steelMat} castShadow>
+        <boxGeometry args={[W + 0.06, H + 0.06, 0.06]} />
+      </mesh>
+      {[0, Math.PI].map((r) => (
+        <mesh key={r} position={[0, y, r ? -0.032 : 0.032]} rotation={[0, r, 0]}>
+          <planeGeometry args={[W, H]} />
+          <meshStandardMaterial map={tex} roughness={0.7} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 /* ───────────────────────── 입구 표석 ───────────────────────── */
 
 export function Monument({ site }: { site: SitePlan }) {
@@ -162,7 +249,7 @@ export function Monument({ site }: { site: SitePlan }) {
   const granite = useMemo(() => ({ map: gMap, normalMap: gNrm }), [gMap, gNrm]);
   const top = info.상단문구 ?? "";
   const title = info.제목 ?? "한글 이름 꾸미기 대회";
-  const sub = info.부제 ?? "수상작 전시";
+  const sub = info.부제 ?? "작품 전시관";
   // 글자만 있는 투명 캔버스 → 검은 화강암 위에 새긴 흰 글씨
   const text = useCanvasTexture(
     1800,

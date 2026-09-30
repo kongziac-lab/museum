@@ -13,7 +13,7 @@ import { sitePlan, type SitePlan } from "./scene/sitePlan";
 import { Fountain } from "./scene/Fountain";
 import { Forest } from "./scene/Forest";
 import { Campus } from "./scene/Campus";
-import { ArtStand, GroupSign, Monument } from "./scene/Stands";
+import { ArtStand, GroupSign, Monument, ZoneArch } from "./scene/Stands";
 import { Effects } from "./scene/Effects";
 
 /* ───────────────────────── 카메라 ───────────────────────── */
@@ -27,6 +27,9 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
   const lastReport = useRef(0);
   /** 지금 향해 걷는 곳과, 그 이동의 최고 속도 (m/s) */
   const move = useRef({ goal: Number.NaN, cap: Infinity });
+  /** 하늘에서 보기: 0 = 걷는 눈높이, 1 = 광장 위. 올라가 있는 동안 원을 천천히 돈다 */
+  const sky = useRef({ k: 0, orbit: 0 });
+  const aerial = useMemo(() => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), tmp: new THREE.Vector3() }), []);
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.1);
@@ -89,7 +92,26 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
 
     if (!smoothLook.current) smoothLook.current = look.clone();
     smoothLook.current.lerp(look, 1 - Math.exp(-6 * dt));
-    camera.lookAt(smoothLook.current);
+
+    // 하늘에서 보기: 남쪽 위(원 지름의 약 1.5배 거리, 약 45° 내려다봄)로 올라가 작품 원 전체를 담고 천천히 돈다.
+    // 세로 화면은 옆이 좁아서 더 멀리서 본다. 오르내리는 길은 가운데서 조금 더 솟게.
+    const sk = sky.current;
+    sk.k = THREE.MathUtils.damp(sk.k, useGallery.getState().overview ? 1 : 0, 1.7, dt);
+    if (sk.k > 0.5) sk.orbit += dt * 0.035;
+    else if (sk.k < 0.02) sk.orbit = 0;
+    if (sk.k > 0.001) {
+      const e = sk.k * sk.k * (3 - 2 * sk.k);
+      const aspect = (camera as THREE.PerspectiveCamera).aspect || 1;
+      const far = (L.radius + 6) * (aspect < 1 ? 2.6 : 1.55) + 10;
+      aerial.pos.set(Math.sin(sk.orbit) * far * 0.72, far * 0.78, Math.cos(sk.orbit) * far * 0.72);
+      aerial.look.set(0, 0, 0);
+      aerial.tmp.copy(camera.position).lerp(aerial.pos, e);
+      aerial.tmp.y += Math.sin(Math.PI * e) * far * 0.12;
+      camera.position.copy(aerial.tmp);
+      camera.lookAt(aerial.look.lerp(smoothLook.current, 1 - e));
+    } else {
+      camera.lookAt(smoothLook.current);
+    }
 
     lastReport.current += dt;
     if (lastReport.current > 0.08) {
@@ -142,7 +164,7 @@ export function GalleryScene({ layout, quality }: { layout: GalleryLayout; quali
         <Monument site={site} />
         {layout.stops.map((s) => (
           <group key={s.art.id}>
-            {s.groupStart && <GroupSign stop={s} layout={layout} />}
+            {s.groupStart && (layout.double ? <ZoneArch stop={s} layout={layout} /> : <GroupSign stop={s} layout={layout} />)}
             <ArtStand stop={s} active={settled && nearest === s.index} near={stopDistance(current, s.index, n) < 7} />
           </group>
         ))}

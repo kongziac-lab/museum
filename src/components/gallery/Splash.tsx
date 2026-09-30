@@ -224,11 +224,11 @@ export function Splash() {
   const D = 0.15;
   const items: Commemoration[] = info.기념?.length
     ? info.기념.slice(0, 2)
-    : [{ 햇수: info.제목 ?? "한글 이름 꾸미기 대회", 단위: "", 이름: info.부제 ?? "수상작 전시관" }];
+    : [{ 햇수: info.제목 ?? "한글 이름 꾸미기 대회", 단위: "", 이름: info.부제 ?? "작품 전시관" }];
   const single = items.length === 1;
   const ring = `${items.map((k) => `${k.이름} ${k.햇수}${k.단위 ?? "돌"}`).join(" · ")} · HANGUL DAY · `;
   const title = info.제목 ?? "한글 이름 꾸미기 대회";
-  const sub = info.부제 ?? "수상작 전시관";
+  const sub = info.부제 ?? "작품 전시관";
   const marquee = [
     ...items.map((k) => `${k.이름} ${k.햇수}${k.단위 ?? "돌"}`),
     "HANGUL DAY",

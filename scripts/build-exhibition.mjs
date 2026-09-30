@@ -5,8 +5,17 @@
  * `수상작/` 폴더의 이미지와 `수상작목록.csv`(캡션), `전시정보.json`(전시 제목 등)을
  * 읽어서 다음 두 가지를 만든다.
  *
- *   1) public/artworks/award-001.png …   — 웹에서 쓰는 이미지 사본 (영문 파일명)
+ *   1) public/artworks/award-001.png …   — 웹에서 쓰는 이미지 사본 (영문 파일명, 크게 보기용 원본)
+ *      public/artworks/award-001.tex.webp — 3D 액자에 거는 텍스처 (긴 변 1024 px)
+ *      public/artworks/award-001.thumb.webp — 작품 띠·목록·멀리 있는 액자용 썸네일 (긴 변 320 px)
  *   2) public/exhibition.json             — 전시관이 읽는 작품 목록 + 캡션 + 전시 정보
+ *
+ * 수상부문이 하나도 적혀 있지 않으면 '전시 모드'다: 대표 작품 없이, 전시정보.json 의 전시순서에 따라
+ *   "영문순"(기본) — 영문 이름 알파벳 순. 머리글자를 이어 7점 안팎씩 묶어 'A – B' 같은 구간(group)을 만든다
+ *   "국적별"      — 같은 나라끼리 (3점 이상인 나라만 따로, 나머지는 '여러 나라')
+ *   "목록순"      — CSV 순서 그대로, 묶음 없음
+ * 영문이름 열이 비어 있으면 한글 이름을 로마자(국어의 로마자 표기법)로 바꿔 쓴다.
+ * 수상부문을 채우면 '시상 모드'로 바뀌어 부문 순서대로 다시 걸리고(부문 안에서는 영문순), 가장 높은 부문의 첫 작품이 대표 작품이 된다.
  *
  * `npm run dev` / `npm run build` 전에 자동으로 실행된다 (predev / prebuild).
  * 직접 실행: `npm run exhibition`
@@ -18,6 +27,14 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** 썸네일·텍스처를 만드는 데 쓴다 (없으면 원본을 그대로 쓴다) */
+let sharp = null;
+try {
+  sharp = (await import("sharp")).default;
+} catch {
+  sharp = null;
+}
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const SRC_DIR = join(ROOT, "수상작");
@@ -36,12 +53,22 @@ const BIG_FILE = 4 * 1024 * 1024; // 4MB 넘으면 경고 (모바일 로딩이 �
 const DEFAULT_INFO = {
   상단문구: "",
   제목: "한글 이름 꾸미기 대회",
-  부제: "수상작 전시관",
+  부제: "작품 전시관",
   소개문구: "",
   안내제목: "전시관에 오신 것을 환영합니다",
   안내문: "작품 가까이 다가가면 수상자와 작품 설명을 볼 수 있습니다.",
   수상부문순서: ["대상", "최우수상", "우수상", "장려상", "입선"],
+  전시순서: "영문순",
 };
+
+/** 전시 모드에서 나라별 묶음을 따로 세우는 최소 점수 (이보다 적은 나라는 '여러 나라'로 모은다) */
+const MIN_GROUP = 3;
+const MIXED_GROUP = "여러 나라";
+/** 영문순 구간 하나에 담을 작품 수 (대략) */
+const ZONE_SIZE = 7;
+/** 3D 텍스처·썸네일 긴 변 (px) */
+const TEX_PX = 1024;
+const THUMB_PX = 320;
 
 /** 배경 사진 파일 이름 (확장자 제외). 수상작 목록에서는 빠진다. */
 const BG_BASENAME = "배경";
@@ -164,6 +191,7 @@ function readCaptions() {
   const col = {
     file: findCol(header, ["파일명", "파일", "file", "filename"]),
     name: findCol(header, ["이름", "성명", "수상자", "name"]),
+    en: findCol(header, ["영문이름", "영문", "영문성명", "english", "name_en", "englishname"]),
     nation: findCol(header, ["국적", "나라", "국가", "nationality", "country"]),
     award: findCol(header, ["수상부문", "수상", "부문", "상", "award"]),
     desc: findCol(header, ["작품설명", "설명", "소감", "description"]),
@@ -177,6 +205,7 @@ function readCaptions() {
     line: line + 2,
     file: get(r, col.file),
     name: get(r, col.name),
+    en: get(r, col.en),
     nation: get(r, col.nation),
     award: get(r, col.award),
     desc: get(r, col.desc),
@@ -193,7 +222,108 @@ function listImages() {
     .sort((a, b) => norm(a).localeCompare(norm(b), "ko"));
 }
 
-function main() {
+/** 이미지 한 장을 긴 변 px 이하 webp 로 줄인다. 실패하면 null (원본을 쓴다). */
+async function shrink(from, to, px, quality) {
+  if (!sharp) return null;
+  try {
+    await sharp(from).rotate().resize(px, px, { fit: "inside", withoutEnlargement: true }).webp({ quality }).toFile(to);
+    return to;
+  } catch (e) {
+    warn(`'${norm(from)}'을(를) 줄이지 못했습니다 (${e.message}). 원본을 그대로 씁니다.`);
+    return null;
+  }
+}
+
+/* 한글 → 로마자 (국어의 로마자 표기법, 음절 단위 — 영문이름을 비워 둔 때만 쓴다) */
+const RR_INIT = ["g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h"];
+const RR_MED = ["a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i"];
+const RR_FIN = ["", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "l", "l", "l", "p", "l", "m", "p", "p", "t", "t", "ng", "t", "t", "k", "t", "p", "t"];
+function romanize(ko) {
+  const word = (w) => {
+    let out = "";
+    for (const ch of w) {
+      const c = ch.codePointAt(0) - 0xac00;
+      if (c < 0 || c > 11171) {
+        out += ch;
+        continue;
+      }
+      const i = Math.floor(c / 588);
+      const m = Math.floor((c % 588) / 28);
+      const f = c % 28;
+      out += (out === "" && i === 5 ? "l" : RR_INIT[i]) + RR_MED[m] + RR_FIN[f];
+    }
+    return out.charAt(0).toUpperCase() + out.slice(1);
+  };
+  const words = norm(ko).split(/\s+/).filter(Boolean);
+  // 띄어 쓰지 않은 세 글자 한글 이름은 성과 이름을 나눈다 (김민준 → Gim Minjun)
+  if (words.length === 1 && /^[가-힣]{3}$/.test(words[0])) return `${word(words[0][0])} ${word(words[0].slice(1))}`;
+  return words.map(word).join(" ");
+}
+
+/** 알파벳 순 비교 (대소문자·악센트 무시) */
+const byEnglish = (a, b) => a.en.localeCompare(b.en, "en", { sensitivity: "base" }) || a.seq - b.seq;
+const initialOf = (e) => (e.en.normalize("NFD").replace(/[^A-Za-z]/g, "").charAt(0) || "#").toUpperCase();
+
+/**
+ * 영문순: 알파벳 순으로 늘어놓고, 머리글자를 차례로 이어 ZONE_SIZE 점쯤 되면 한 구간으로 끊는다 ('A – B', 'S').
+ * 마지막 구간이 너무 작으면 앞 구간에 붙인다.
+ */
+function groupByInitial(entries) {
+  entries.sort(byEnglish);
+  const letters = [];
+  for (const e of entries) {
+    const L = initialOf(e);
+    if (letters.at(-1)?.L !== L) letters.push({ L, items: [] });
+    letters.at(-1).items.push(e);
+  }
+  const zones = [];
+  let cur = null;
+  for (const l of letters) {
+    if (!cur) cur = { from: l.L, to: l.L, items: [] };
+    cur.to = l.L;
+    cur.items.push(...l.items);
+    if (cur.items.length >= ZONE_SIZE) {
+      zones.push(cur);
+      cur = null;
+    }
+  }
+  if (cur) {
+    if (zones.length && cur.items.length < ZONE_SIZE / 2) {
+      zones.at(-1).to = cur.to;
+      zones.at(-1).items.push(...cur.items);
+    } else zones.push(cur);
+  }
+  for (const z of zones) for (const e of z.items) e.group = z.from === z.to ? z.from : `${z.from} – ${z.to}`;
+  return entries;
+}
+
+/**
+ * 전시 모드 국적별 순서: 3점 이상인 나라는 점수가 많은 나라부터(같으면 목록에 먼저 나온 나라부터) 한데 모으고,
+ * 나머지 나라는 '여러 나라'로 맨 뒤에. 같은 묶음 안에서는 CSV 순서.
+ */
+function groupByNation(entries) {
+  const count = new Map();
+  const first = new Map();
+  entries.forEach((e, i) => {
+    const k = e.nation || MIXED_GROUP;
+    count.set(k, (count.get(k) ?? 0) + 1);
+    if (!first.has(k)) first.set(k, i);
+  });
+  const label = (e) => {
+    const k = e.nation || MIXED_GROUP;
+    return count.get(k) >= MIN_GROUP && k !== MIXED_GROUP ? k : MIXED_GROUP;
+  };
+  const rank = (g) => (g === MIXED_GROUP ? [1, 0, 0] : [0, -count.get(g), first.get(g)]);
+  const cmp = (a, b) => {
+    const ra = rank(a.group);
+    const rb = rank(b.group);
+    return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2] || a.seq - b.seq;
+  };
+  entries.forEach((e) => (e.group = label(e)));
+  return entries.sort(cmp);
+}
+
+async function main() {
   const info = readInfo();
   const order = (info.수상부문순서 ?? []).map(norm);
   const images = listImages();
@@ -225,7 +355,7 @@ function main() {
   for (const f of images) {
     if (used.has(f)) continue;
     warn(`'${norm(f)}'은(는) CSV에 없어 캡션 없이 전시합니다.`);
-    entries.push({ file: f, name: norm(f).replace(/\.[^.]+$/, ""), nation: "", award: "", desc: "", line: Infinity });
+    entries.push({ file: f, name: norm(f).replace(/\.[^.]+$/, ""), en: "", nation: "", award: "", desc: "", line: Infinity });
   }
 
   // 수상 부문 순서 → CSV 순서로 정렬. 순서표에 없는 부문은 그 뒤에.
@@ -233,42 +363,68 @@ function main() {
     const i = order.indexOf(a);
     return i >= 0 ? i : a ? order.length : order.length + 1;
   };
-  entries.forEach((e, i) => (e.seq = i));
-  entries.sort((a, b) => rank(a.award) - rank(b.award) || a.seq - b.seq);
+  entries.forEach((e, i) => {
+    e.seq = i;
+    if (!e.en) e.en = romanize(e.name);
+  });
+  // 수상부문이 하나라도 적혀 있으면 시상 모드, 아니면 전시 모드
+  const mode = entries.some((e) => e.award) ? "awards" : "exhibition";
+  if (mode === "awards") {
+    // 같은 부문 안에서는 전시순서가 영문순(기본)이면 알파벳 순, 아니면 CSV 순서
+    const within = ["목록순", "국적별"].includes(norm(info.전시순서)) ? (a, b) => a.seq - b.seq : byEnglish;
+    entries.sort((a, b) => rank(a.award) - rank(b.award) || within(a, b));
+    entries.forEach((e) => (e.group = e.award || ""));
+  } else if (norm(info.전시순서) === "국적별") {
+    groupByNation(entries);
+  } else if (norm(info.전시순서) === "목록순") {
+    entries.forEach((e) => (e.group = ""));
+  } else {
+    groupByInitial(entries);
+  }
 
   // 출력 폴더 비우고 다시 복사 (영문 파일명으로 — URL 인코딩 문제 방지)
   if (existsSync(OUT_IMG_DIR)) rmSync(OUT_IMG_DIR, { recursive: true, force: true });
   mkdirSync(OUT_IMG_DIR, { recursive: true });
   writeFileSync(join(OUT_IMG_DIR, ".gitkeep"), "");
 
-  const artworks = entries.map((e, i) => {
+  const artworks = [];
+  for (const [i, e] of entries.entries()) {
     const ext = extname(e.file).toLowerCase();
-    const out = `award-${String(i + 1).padStart(3, "0")}${ext}`;
+    const base = `award-${String(i + 1).padStart(3, "0")}`;
+    const out = `${base}${ext}`;
     const from = join(SRC_DIR, e.file);
     copyFileSync(from, join(OUT_IMG_DIR, out));
+    const tex = await shrink(from, join(OUT_IMG_DIR, `${base}.tex.webp`), TEX_PX, 86);
+    const thumb = await shrink(from, join(OUT_IMG_DIR, `${base}.thumb.webp`), THUMB_PX, 80);
     if (statSync(from).size > BIG_FILE) {
       warn(`'${norm(e.file)}' 용량이 큽니다 (${(statSync(from).size / 1048576).toFixed(1)}MB). 2000px 이하로 줄이면 모바일에서 빨리 뜹니다.`);
     }
-    const size = imageSize(from);
-    return {
+    // 크기는 회전(EXIF)을 반영한 텍스처에서 읽는다 (휴대폰 사진이 옆으로 눕지 않게)
+    const size = imageSize(tex ?? from);
+    artworks.push({
       id: `awards/${out}`,
       width: size?.width ?? 0,
       height: size?.height ?? 0,
       src: `/artworks/${out}`,
+      tex: tex ? `/artworks/${base}.tex.webp` : `/artworks/${out}`,
+      thumb: thumb ? `/artworks/${base}.thumb.webp` : `/artworks/${out}`,
       collection: "awards",
       fileName: norm(e.file),
       title: e.name,
       name: e.name,
+      nameEn: e.en || undefined,
       nationality: e.nation,
       award: e.award,
       awardRank: rank(e.award),
       description: e.desc,
+      group: e.group || undefined,
       hero: false,
-    };
-  });
+    });
+  }
+  if (!sharp) warn("sharp 를 불러오지 못해 썸네일 없이 원본 이미지를 씁니다 (npm install 을 다시 해 보세요).");
 
-  // 가장 높은 부문의 첫 작품을 입구 정면(대표 작품)으로
-  if (artworks.length > 0) artworks[0].hero = true;
+  // 시상 모드: 가장 높은 부문의 첫 작품을 입구 정면(대표 작품)으로. 전시 모드에는 대표 작품이 없다.
+  if (mode === "awards" && artworks.length > 0) artworks[0].hero = true;
 
   // 배경 사진 (선택): 수상작/배경.jpg — 360° 파노라마(가로:세로 = 2:1)면 기본 공원 하늘 대신 그 사진을 사방 배경으로 쓴다.
   let background = null;
@@ -294,15 +450,16 @@ function main() {
     generatedAt: new Date().toISOString(),
     info,
     background,
+    mode,
     count: artworks.length,
     artworks,
   };
   writeFileSync(OUT_JSON, JSON.stringify(payload, null, 2));
 
-  const byAward = {};
-  for (const a of artworks) byAward[a.award || "(부문 없음)"] = (byAward[a.award || "(부문 없음)"] ?? 0) + 1;
-  log(`✓ 수상작 ${artworks.length}점 준비 완료 → public/exhibition.json`);
-  log("  " + Object.entries(byAward).map(([k, v]) => `${k} ${v}`).join(" · "));
+  const byGroup = {};
+  for (const a of artworks) byGroup[a.group || "(묶음 없음)"] = (byGroup[a.group || "(묶음 없음)"] ?? 0) + 1;
+  log(`✓ ${mode === "awards" ? "시상" : "전시"} 모드 · 작품 ${artworks.length}점 준비 완료 → public/exhibition.json`);
+  log("  " + Object.entries(byGroup).map(([k, v]) => `${k} ${v}`).join(" · "));
 }
 
-main();
+await main();
