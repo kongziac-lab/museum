@@ -412,6 +412,8 @@ interface GalleryState {
   splashRun: number;
   /** 기념 화면이 떠 있는지 (걷히는 움직임이 다 끝나면 false) */
   splashUp: boolean;
+  /** 한글날 도입 영상(src/remotion)을 트는 중 */
+  film: boolean;
 
   /** 자동 관람 중인지 */
   autoplay: boolean;
@@ -462,6 +464,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
   cut: 0,
   splashRun: 0,
   splashUp: true,
+  film: false,
 
   autoplay: false,
   autoReplay: false,

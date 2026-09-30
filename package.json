@@ -14,12 +14,15 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push"
+    "prisma:push": "prisma db push",
+    "video:studio": "npm run exhibition && remotion studio",
+    "video:render": "npm run exhibition && remotion render HangulDay out/hangul-day.mp4 && remotion render HangulDayVertical out/hangul-day-vertical.mp4"
   },
   "dependencies": {
     "@react-three/drei": "^10.0.6",
     "@react-three/fiber": "^9.8.1",
     "@react-three/postprocessing": "^3.1.2",
+    "@remotion/player": "4.0.531",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "framer-motion": "^12.5.0",
@@ -29,12 +32,15 @@
     "postprocessing": "^6.39.5",
     "react": "19.0.0",
     "react-dom": "19.0.0",
+    "remotion": "4.0.531",
     "three": "^0.174.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@dgreenheck/ez-tree": "^1.1.0",
     "@prisma/client": "^6.5.0",
+    "@remotion/cli": "4.0.531",
+    "@remotion/google-fonts": "4.0.531",
     "@types/howler": "^2.2.12",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",

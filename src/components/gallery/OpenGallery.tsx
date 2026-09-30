@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
@@ -11,6 +12,9 @@ import { AUTO, autoAdvance, buildLayout, canLoop, closeViewer, colorOf, dwellFor
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
 import { ArtViewer } from "./ArtViewer";
 import { Splash } from "./Splash";
+
+/** 한글날 도입 영상 — 틀 때만 불러온다 (Remotion Player) */
+const IntroFilm = dynamic(() => import("./IntroFilm"), { ssr: false });
 import { GalleryScene } from "./GalleryScene";
 import { detectQuality, type Quality } from "./scene/common";
 
@@ -50,7 +54,7 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 
     const blocked = () => {
       const s = useGallery.getState();
-      return !s.started || s.detail !== null || s.listOpen || s.overview;
+      return !s.started || s.detail !== null || s.listOpen || s.overview || s.film;
     };
 
     const onUi = (e: Event) => Boolean((e.target as HTMLElement | null)?.closest?.("button, [data-noswipe]"));
@@ -94,6 +98,10 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 
     const onKey = (e: KeyboardEvent) => {
       const s = useGallery.getState();
+      if (s.film) {
+        if (e.key === "Escape") useGallery.setState({ film: false });
+        return;
+      }
       if (e.key === "Escape") {
         if (s.detail !== null) closeViewer();
         else if (s.listOpen) s.toggleList(false);
@@ -150,8 +158,9 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 /**
  * 자동 관람: 작품 앞에 도착하면 dwellFor 만큼 머문 뒤 다음 작품으로 걷는다. 머무는 동안 캡션을 잠깐 보여 주고
  * 작품 정면으로 다가가 작품이 화면을 채웠다가(closeUp, 화면 위 버튼·캡션은 사라진다) 떠나기 전에 물러난다.
- * 마지막 작품까지 보면 완전히 처음으로 — 기념 화면(580돌·100돌)이 위에서 내려와 덮고, 그사이 카메라는 정문으로 옮기고,
- * 기념 화면이 걷히면 정문 화면을 AUTO.introHold 동안 보여 준 뒤 다시 걸어 들어간다. 이렇게 끝없이 되풀이한다.
+ * 마지막 작품까지 보면 완전히 처음으로 — 한글날 도입 영상(1분, 끝이 580돌·100돌 화면)이 위에서 내려와 덮고,
+ * 그사이 카메라는 정문으로 옮기고, 영상이 끝나면 정문 화면을 AUTO.introHold 동안 보여 준 뒤 다시 걸어 들어간다.
+ * 이렇게 끝없이 되풀이한다. 행사장 화면(?auto)은 처음 불러온 뒤에도 영상부터 튼다.
  * 기다리는 동안 누가 화면을 만지면 되풀이를 멈추고 그 사람에게 맡긴다.
  * 크게 보기·작품 목록이 열려 있는 동안에는 쉬고, 닫히면 그 작품에서 다시 머문다.
  * 주소에 ?auto 를 붙이면(행사장 화면) 불러오자마자 시작하고, 아무도 만지지 않은 채 AUTO.kioskIdle 이 지나면 다시 시작한다.
@@ -173,6 +182,13 @@ function useAutoTour() {
       }
     };
     let at = Number.NaN; // 머물고 있는 작품 번호
+    /** 영상 → 정문 화면 → 자동 관람. 관람 중이었으면 영상이 덮은 뒤 카메라를 정문으로 옮긴다 */
+    const beginReplay = (now: number, fromTour: boolean) => {
+      useGallery.setState({ autoplay: false, autoReplay: true, autoDwell: null, closeUp: false, overview: false, started: false, film: true });
+      cutAt = fromTour ? now + 1000 : 0;
+      replay = true;
+      introSince = 0;
+    };
     const tick = () => {
       const s = useGallery.getState();
       const now = performance.now();
@@ -180,7 +196,7 @@ function useAutoTour() {
         cutAt = 0;
         jumpTo(-1);
       }
-      if (replay && !cutAt && !s.splashUp) {
+      if (replay && !cutAt && !s.splashUp && !s.film) {
         if (!introSince) introSince = now;
         if (now - introSince >= AUTO.introHold) {
           replay = false;
@@ -202,7 +218,9 @@ function useAutoTour() {
           if (bgmWanted()) bgm.start();
           if (s.detail !== null) closeViewer();
           if (s.listOpen) s.toggleList(false);
-          playAuto();
+          // 처음에는 영상부터, 누가 만지다 떠난 뒤에는 바로 관람
+          if (firstRun) beginReplay(now, false);
+          else playAuto();
           return;
         }
       }
@@ -232,11 +250,8 @@ function useAutoTour() {
       if (spent >= s.autoDwell.ms) {
         at = Number.NaN;
         if (here === n - 1 && n > 1) {
-          // 한 바퀴 끝 → 완전히 처음(기념 화면)부터
-          useGallery.setState((st) => ({ autoplay: false, autoReplay: true, autoDwell: null, closeUp: false, overview: false, started: false, splashRun: st.splashRun + 1 }));
-          cutAt = now + 1000;
-          replay = true;
-          introSince = 0;
+          // 한 바퀴 끝 → 완전히 처음(한글날 영상)부터
+          beginReplay(now, true);
           return;
         }
         useGallery.setState({ autoDwell: null });
@@ -453,6 +468,13 @@ function Intro() {
                 className="rounded-full border border-white/70 px-6 py-3.5 text-base font-medium text-white backdrop-blur-sm transition hover:bg-white/15"
               >
                 작품 목록 {count > 0 && `(${count})`}
+              </button>
+              <button
+                onClick={() => useGallery.setState({ film: true })}
+                disabled={!loaded}
+                className="rounded-full border border-white/70 px-6 py-3.5 text-base font-medium text-white backdrop-blur-sm transition hover:bg-white/15 disabled:opacity-50"
+              >
+                ▶ 한글날 영상
               </button>
             </div>
             <p className="mt-6 text-sm text-white/80">스크롤하거나 화면을 밀어서 한 작품씩 걸어가며 볼 수 있어요</p>
@@ -784,6 +806,7 @@ export function OpenGallery() {
   const arts = useGallery((s) => s.arts);
   const splashRun = useGallery((s) => s.splashRun);
   const open = useGallery((s) => s.detail !== null);
+  const film = useGallery((s) => s.film);
   // 불러오는 동안(기념 화면이 3D 를 가림)과 크게 보기 중에는 천천히 그린다
   const loading = useGallery((s) => !(s.loaded && s.sceneryReady));
   const livePortrait = usePortrait();
@@ -804,7 +827,7 @@ export function OpenGallery() {
   return (
     <div ref={rootRef} id="museum-root" className="bg-[#c9d3d6]">
       <Canvas
-        frameloop={open || loading ? "demand" : "always"}
+        frameloop={open || loading || film ? "demand" : "always"}
         inert={open}
         shadows={{ type: THREE.PCFSoftShadowMap }}
         dpr={[1, 1.5]}
@@ -817,12 +840,13 @@ export function OpenGallery() {
         camera={{ fov: portrait ? 64 : 55, near: 0.1, far: 1500, position: [0, 1.62, 40] }}
       >
         {layout && <GalleryScene layout={layout} quality={quality} />}
-        <SlowWhileViewing open={open || loading} />
+        <SlowWhileViewing open={open || loading || film} />
       </Canvas>
       <Intro />
       <Hud layout={layout} inert={open} />
       <ListOverlay />
       <ArtViewer />
+      <AnimatePresence>{film && <IntroFilm key="film" />}</AnimatePresence>
       <Splash key={splashRun} replay={splashRun > 0} />
     </div>
   );
