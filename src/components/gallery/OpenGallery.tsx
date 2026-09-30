@@ -25,9 +25,10 @@ function useExhibition() {
   useEffect(() => {
     fetch("/exhibition.json", { cache: "no-store" })
       .then((r) => r.json())
-      .then((j: { artworks: ArtworkSource[]; info?: ExhibitionInfo; background?: ExhibitionBackground | null }) =>
-        setData(j.artworks ?? [], j.info ?? {}, j.background ?? null)
-      )
+      .then((j: { artworks: ArtworkSource[]; info?: ExhibitionInfo; background?: ExhibitionBackground | null; music?: { film?: string } | null }) => {
+        setData(j.artworks ?? [], j.info ?? {}, j.background ?? null);
+        useGallery.setState({ music: j.music ?? null });
+      })
       .catch(() => setData([], {}, null));
   }, [setData]);
 }
@@ -343,6 +344,8 @@ function useBgm() {
     // 크게 보기를 여는 동안 줄인다
     const unsub = useGallery.subscribe((s, p) => {
       if ((s.detail !== null) !== (p.detail !== null)) bgm.duck(s.detail !== null);
+      const filmMusic = s.film && Boolean(s.music?.film);
+      if (filmMusic !== (p.film && Boolean(p.music?.film))) bgm.hush(filmMusic);
     });
     if (process.env.NODE_ENV !== "production") (window as unknown as { __bgm: typeof bgm }).__bgm = bgm;
     return () => {

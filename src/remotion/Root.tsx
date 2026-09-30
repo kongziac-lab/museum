@@ -5,7 +5,9 @@ import { DURATION, FPS, HangulDay, defaultProps, propsFromExhibition, type Hangu
 const withExhibition: CalculateMetadataFunction<HangulDayProps> = async ({ props }) => {
   try {
     const res = await fetch(staticFile("exhibition.json"));
-    return { props: { ...props, ...propsFromExhibition(await res.json()) } };
+    const next = propsFromExhibition(await res.json());
+    // 스튜디오·렌더에서는 public 파일을 staticFile 로 가리켜야 한다
+    return { props: { ...props, ...next, music: next.music ? staticFile(next.music.replace(/^\//, "")) : null } };
   } catch {
     return { props };
   }

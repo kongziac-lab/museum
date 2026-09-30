@@ -1,22 +1,16 @@
-Exhibition soundtrack
-=====================
+전시관 음악
+==========
 
-This folder is intentionally empty.
+film.mp3  한글날 도입 영상(1분)의 음악. 영상 길이 60초에 맞춘 곡이어야 한다.
+          있으면 전시관 안의 영상과 npm run video:render 로 뽑는 MP4 에 함께 들어가고,
+          영상이 나오는 동안은 합성 국악 배경음(src/lib/bgm.ts)이 쉰다.
+          없으면 영상은 소리 없이 나오고 배경음이 계속 흐른다.
 
-Drop a single audio file here and it becomes the exhibition soundtrack. It
-starts when the visitor clicks to enter the gallery, and the soundtrack widget
-in the HUD controls volume and muting.
+지금 film.mp3 는 받은 곡(62.3초)을 음높이는 그대로 두고 3.8% 빠르게 맞춰 60초로 만들고
+끝 0.7초를 페이드한 것이다 (강조음이 20.5초 '스물여덟 글자', 29.7초 '580년', 38.5초 이름이
+피어나는 무렵, 57.1초 580돌·100돌 끝에 온다). 다른 곡으로 바꿀 때:
 
-  Supported formats: .mp3, .ogg, .m4a, .wav, .aac
+  ffmpeg -i 새곡.mp3 -af "atempo=<원래 길이 ÷ 60>,atrim=0:60,afade=t=out:st=59.3:d=0.7" \
+         -ar 48000 -ac 2 -b:a 192k public/audio/film.mp3
 
-The engine plays the first audio file it finds, so only keep one in place.
-
-Please use music you have the right to distribute. Public-domain and
-Creative Commons sources include:
-
-  - Free Music Archive   https://freemusicarchive.org
-  - Musopen (public domain classical)   https://musopen.org
-
-The gallery runs perfectly well in silence. Ambient room tone, footsteps and
-the door sound are all synthesised at runtime with the Web Audio API and need
-no asset files.
+배포에 쓸 권리가 있는 음악만 넣는다.

@@ -1,5 +1,5 @@
 import { useMemo, type CSSProperties, type ReactNode } from "react";
-import { AbsoluteFill, Easing, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Audio, Easing, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { MONO, SANS, SERIF, ensureFonts } from "./fonts";
 
 /*
@@ -25,6 +25,8 @@ export type HangulDayProps = {
   subtitle: string;
   date: string;
   commemorations: Commemoration[];
+  /** 영상 음악 (60초에 맞춘 곡의 주소). 없으면 소리 없이 */
+  music?: string | null;
 };
 
 export const defaultProps: HangulDayProps = {
@@ -48,6 +50,7 @@ export const defaultProps: HangulDayProps = {
 
 /** 전시관의 exhibition.json → 영상 props */
 export function propsFromExhibition(j: {
+  music?: { film?: string } | null;
   artworks?: { name?: string; title?: string; nationality?: string }[];
   info?: { 상단문구?: string; 제목?: string; 부제?: string; 기념일?: string; 기념?: Commemoration[] };
 }): HangulDayProps {
@@ -59,6 +62,7 @@ export function propsFromExhibition(j: {
     subtitle: info.부제 ?? defaultProps.subtitle,
     date: info.기념일 ?? defaultProps.date,
     commemorations: info.기념?.length ? info.기념.slice(0, 2) : defaultProps.commemorations,
+    music: j.music?.film ?? null,
   };
 }
 
@@ -653,6 +657,8 @@ export function HangulDay(p: HangulDayProps) {
   const names = p.names.length ? p.names : defaultProps.names;
   return (
     <AbsoluteFill style={{ background: NAVY }}>
+      {/* 음악: 곡 끝은 이미 페이드되어 있다 — 첫 3프레임만 부드럽게 열어 딸깍 소리를 막는다 */}
+      {p.music && <Audio src={p.music} volume={(fr) => interpolate(fr, [0, 3], [0, 1], CLAMP)} />}
       <Sequence from={SCENES.hunmin.from} durationInFrames={SCENES.hunmin.dur} name="1 훈민정음">
         <Hunmin dur={SCENES.hunmin.dur} />
       </Sequence>

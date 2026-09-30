@@ -414,6 +414,8 @@ interface GalleryState {
   splashUp: boolean;
   /** 한글날 도입 영상(src/remotion)을 트는 중 */
   film: boolean;
+  /** 영상 음악 등 (public/audio, 빌드 스크립트가 알려 준다) */
+  music: { film?: string } | null;
 
   /** 자동 관람 중인지 */
   autoplay: boolean;
@@ -465,6 +467,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
   splashRun: 0,
   splashUp: true,
   film: false,
+  music: null,
 
   autoplay: false,
   autoReplay: false,

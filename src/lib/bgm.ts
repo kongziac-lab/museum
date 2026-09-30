@@ -47,6 +47,7 @@ class Bgm {
   private seed = (Date.now() % 100000) + 7;
   private volume = 0.55;
   private ducked = false;
+  private hushed = false;
   playing = false;
 
   private rnd() {
@@ -92,12 +93,25 @@ class Bgm {
 
   /** 크게 보기 등에서 소리를 줄인다 */
   duck(on: boolean) {
-    if (!this.ctx || this.ducked === on) return;
+    if (this.ducked === on) return;
     this.ducked = on;
+    this.level(0.8);
+  }
+
+  /** 다른 음악(한글날 영상)이 나오는 동안 완전히 쉰다 */
+  hush(on: boolean) {
+    if (this.hushed === on) return;
+    this.hushed = on;
+    this.level(on ? 1.2 : 2.5);
+  }
+
+  private level(sec: number) {
+    if (!this.ctx) return;
     const t = this.ctx.currentTime;
+    const to = this.hushed ? 0 : this.ducked ? 0.35 : 1;
     this.duckGain.gain.cancelScheduledValues(t);
     this.duckGain.gain.setValueAtTime(this.duckGain.gain.value, t);
-    this.duckGain.gain.linearRampToValueAtTime(on ? 0.35 : 1, t + 0.8);
+    this.duckGain.gain.linearRampToValueAtTime(to, t + sec);
   }
 
   /** 탭이 가려지면 잠시 쉰다 */
@@ -119,6 +133,7 @@ class Bgm {
     this.master = ctx.createGain();
     this.master.gain.value = 0;
     this.duckGain = ctx.createGain();
+    this.duckGain.gain.value = this.hushed ? 0 : this.ducked ? 0.35 : 1;
     this.dry = ctx.createGain();
     this.wet = ctx.createGain();
     this.dry.gain.value = 0.8;

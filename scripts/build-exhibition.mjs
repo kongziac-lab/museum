@@ -419,10 +419,14 @@ async function main() {
     else warn(`${norm(bgFile)}은 360° 파노라마(가로:세로 = 2:1)가 아니라서 쓰지 않습니다. 기본 공원 배경을 씁니다.`);
   }
 
+  // 한글날 도입 영상 음악 (선택): public/audio/film.mp3 — 영상 길이(60초)에 맞춘 곡
+  const music = existsSync(join(ROOT, "public", "audio", "film.mp3")) ? { film: "/audio/film.mp3" } : null;
+
   const payload = {
     generatedAt: new Date().toISOString(),
     info,
     background,
+    music,
     mode,
     count: artworks.length,
     artworks,
