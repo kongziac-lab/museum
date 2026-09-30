@@ -30,6 +30,9 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
   /** 하늘에서 보기: 0 = 걷는 눈높이, 1 = 광장 위. 올라가 있는 동안 원을 천천히 돈다 */
   const sky = useRef({ k: 0, orbit: 0 });
   const aerial = useMemo(() => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), tmp: new THREE.Vector3() }), []);
+  /** 작품 가까이 보기: 0 = 관람 자리, 1 = 작품 정면에서 화면을 채우는 자리 */
+  const close = useRef(0);
+  const near = useMemo(() => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), nrm: new THREE.Vector3() }), []);
 
   const lastCut = useRef(useGallery.getState().cut);
 
@@ -103,6 +106,25 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
 
     if (!smoothLook.current) smoothLook.current = look.clone();
     smoothLook.current.lerp(look, 1 - Math.exp(-6 * dt));
+    near.look.copy(smoothLook.current);
+
+    // 작품 가까이 보기 (자동 관람): 작품 정면으로 천천히 다가가 작품이 화면을 채우게 하고, 끝나면 관람 자리로 물러난다.
+    // 거리는 화면 비율에 맞춰 작품 가로·세로가 모두 들어가는 만큼 (조금 여유를 두어 액자 안쪽 테두리가 살짝 보이게)
+    const gs = useGallery.getState();
+    close.current = THREE.MathUtils.damp(close.current, gs.closeUp && !gs.overview ? 1 : 0, 1.9, dt);
+    const here = Math.round(t.current);
+    const stop = here >= 0 ? L.stops[stopIndex(here, n)] : undefined;
+    if (close.current > 0.001 && stop) {
+      const cam = camera as THREE.PerspectiveCamera;
+      const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+      const d = Math.max(stop.h / 2 / tanV, stop.w / 2 / (tanV * (cam.aspect || 1))) * 1.07;
+      near.nrm.set(Math.sin(stop.yaw), 0, Math.cos(stop.yaw));
+      near.pos.copy(stop.center).addScaledVector(near.nrm, d);
+      const c = close.current;
+      const e = c * c * c * (c * (c * 6 - 15) + 10);
+      camera.position.lerp(near.pos, e);
+      near.look.lerp(stop.center, e);
+    }
 
     // 하늘에서 보기: 남쪽 위(원 지름의 약 1.5배 거리, 약 45° 내려다봄)로 올라가 작품 원 전체를 담고 천천히 돈다.
     // 세로 화면은 옆이 좁아서 더 멀리서 본다. 오르내리는 길은 가운데서 조금 더 솟게.
@@ -119,9 +141,9 @@ function CameraRig({ layout }: { layout: GalleryLayout }) {
       aerial.tmp.copy(camera.position).lerp(aerial.pos, e);
       aerial.tmp.y += Math.sin(Math.PI * e) * far * 0.12;
       camera.position.copy(aerial.tmp);
-      camera.lookAt(aerial.look.lerp(smoothLook.current, 1 - e));
+      camera.lookAt(aerial.look.lerp(near.look, 1 - e));
     } else {
-      camera.lookAt(smoothLook.current);
+      camera.lookAt(near.look);
     }
 
     lastReport.current += dt;

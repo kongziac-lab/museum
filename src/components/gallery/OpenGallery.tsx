@@ -5,6 +5,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
+import { bgm, bgmWanted, setBgmWanted } from "@/lib/bgm";
 import { awardColor } from "@/lib/config";
 import { AUTO, autoAdvance, buildLayout, canLoop, closeViewer, colorOf, dwellFor, goTo, jumpTo, moveDetail, offStop, openViewer, pauseAuto, playAuto, setOverview, step, stopIndex, useGallery, viewerPopped, type GalleryLayout } from "@/lib/gallery";
 import type { ArtworkSource, ExhibitionBackground, ExhibitionInfo } from "@/lib/types";
@@ -147,7 +148,8 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 /* ───────────────────────── 자동 관람 ───────────────────────── */
 
 /**
- * 자동 관람: 작품 앞에 도착하면 dwellFor 만큼 머문 뒤 다음 작품으로 걷는다.
+ * 자동 관람: 작품 앞에 도착하면 dwellFor 만큼 머문 뒤 다음 작품으로 걷는다. 머무는 동안 캡션을 잠깐 보여 주고
+ * 작품 정면으로 다가가 작품이 화면을 채웠다가(closeUp, 화면 위 버튼·캡션은 사라진다) 떠나기 전에 물러난다.
  * 마지막 작품까지 보면 완전히 처음으로 — 기념 화면(580돌·100돌)이 위에서 내려와 덮고, 그사이 카메라는 정문으로 옮기고,
  * 기념 화면이 걷히면 정문 화면을 AUTO.introHold 동안 보여 준 뒤 다시 걸어 들어간다. 이렇게 끝없이 되풀이한다.
  * 기다리는 동안 누가 화면을 만지면 되풀이를 멈추고 그 사람에게 맡긴다.
@@ -196,6 +198,8 @@ function useAutoTour() {
         const idle = !s.autoplay && !replay && now - Math.max(lastInput, readyAt) > AUTO.kioskIdle;
         if (firstRun || idle) {
           firstDone = true;
+          // 행사장 화면: 누르기 전에는 브라우저가 소리를 막지만, 소리를 허락한 키오스크 설정이면 바로 난다
+          if (bgmWanted()) bgm.start();
           if (s.detail !== null) closeViewer();
           if (s.listOpen) s.toggleList(false);
           playAuto();
@@ -212,7 +216,7 @@ function useAutoTour() {
       const arrived = s.target >= 0 && Math.abs(s.current - s.target) < 0.04;
       if (s.detail !== null || s.listOpen || !arrived) {
         at = Number.NaN;
-        if (s.autoDwell) useGallery.setState({ autoDwell: null });
+        if (s.autoDwell || s.closeUp) useGallery.setState({ autoDwell: null, closeUp: false });
         return;
       }
       // 카메라가 바퀴 번호를 옮겨 세도(t ↔ t ± n) 같은 작품이면 이어서 머문다
@@ -222,11 +226,14 @@ function useAutoTour() {
         useGallery.setState({ autoDwell: { at: now, ms: dwellFor(s.arts[here]) } });
         return;
       }
-      if (now - s.autoDwell.at >= s.autoDwell.ms) {
+      const spent = now - s.autoDwell.at;
+      const close = spent > AUTO.closeUpAfter && spent < s.autoDwell.ms - AUTO.closeUpBefore;
+      if (close !== s.closeUp) useGallery.setState({ closeUp: close });
+      if (spent >= s.autoDwell.ms) {
         at = Number.NaN;
         if (here === n - 1 && n > 1) {
           // 한 바퀴 끝 → 완전히 처음(기념 화면)부터
-          useGallery.setState((st) => ({ autoplay: false, autoReplay: true, autoDwell: null, overview: false, started: false, splashRun: st.splashRun + 1 }));
+          useGallery.setState((st) => ({ autoplay: false, autoReplay: true, autoDwell: null, closeUp: false, overview: false, started: false, splashRun: st.splashRun + 1 }));
           cutAt = now + 1000;
           replay = true;
           introSince = 0;
@@ -298,6 +305,69 @@ function AutoButton() {
           transition={{ duration: dwell.ms / 1000, ease: "linear" }}
         />
       )}
+    </button>
+  );
+}
+
+/* ───────────────────────── 배경음 ───────────────────────── */
+
+/**
+ * 국악풍 배경음(src/lib/bgm.ts): 브라우저가 첫 누름 전에는 소리를 막으므로, 화면을 처음 누르거나 키를 누를 때 켠다
+ * (끈 적이 있으면 켜지 않는다). 크게 보기를 여는 동안은 소리를 줄이고, 탭이 가려지면 쉰다.
+ */
+function useBgm() {
+  useEffect(() => {
+    const kick = () => {
+      if (bgmWanted()) bgm.start();
+    };
+    const opts = { capture: true, passive: true } as const;
+    const evs = ["pointerup", "touchend", "keydown", "click"] as const;
+    evs.forEach((e) => window.addEventListener(e, kick, opts));
+    const vis = () => bgm.pause(document.visibilityState !== "visible");
+    document.addEventListener("visibilitychange", vis);
+    // 크게 보기를 여는 동안 줄인다
+    const unsub = useGallery.subscribe((s, p) => {
+      if ((s.detail !== null) !== (p.detail !== null)) bgm.duck(s.detail !== null);
+    });
+    if (process.env.NODE_ENV !== "production") (window as unknown as { __bgm: typeof bgm }).__bgm = bgm;
+    return () => {
+      evs.forEach((e) => window.removeEventListener(e, kick, opts));
+      document.removeEventListener("visibilitychange", vis);
+      unsub();
+    };
+  }, []);
+}
+
+/** 배경음 켜기·끄기 (고른 것은 이 브라우저에 기억한다) */
+function SoundButton() {
+  const [on, setOn] = useState(true);
+  useEffect(() => setOn(bgmWanted()), []);
+  const toggle = () => {
+    const next = !on;
+    setOn(next);
+    setBgmWanted(next);
+    if (next) bgm.start();
+    else bgm.stop();
+  };
+  return (
+    <button
+      onClick={toggle}
+      aria-pressed={on}
+      aria-label={on ? "배경음 끄기" : "배경음 켜기"}
+      title={on ? "배경음 끄기" : "배경음 켜기"}
+      className={`${btn} grid h-9 w-9 shrink-0 place-items-center`}
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M11 5 6 9H3v6h3l5 4V5z" fill="currentColor" stroke="none" />
+        {on ? (
+          <>
+            <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+            <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+          </>
+        ) : (
+          <path d="m16 9 6 6m0-6-6 6" />
+        )}
+      </svg>
     </button>
   );
 }
@@ -409,9 +479,10 @@ function Caption({ layout }: { layout: GalleryLayout | null }) {
   const current = useGallery((s) => s.current);
   const started = useGallery((s) => s.started);
   const overview = useGallery((s) => s.overview);
+  const closeUp = useGallery((s) => s.closeUp);
   const idx = stopIndex(current, arts.length);
   const art = arts[idx];
-  const show = started && !overview && art && offStop(current, layout) < 0.22;
+  const show = started && !overview && !closeUp && art && offStop(current, layout) < 0.22;
   return (
     <AnimatePresence mode="wait">
       {show && (
@@ -500,6 +571,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
   const toggleList = useGallery((s) => s.toggleList);
   const autoplay = useGallery((s) => s.autoplay);
   const overview = useGallery((s) => s.overview);
+  const closeUp = useGallery((s) => s.closeUp);
   const idx = Math.round(target);
   const n = arts.length;
   const stop = stopIndex(idx, n);
@@ -517,7 +589,10 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   if (!started) return null;
   return (
-    <div inert={inert} className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-3 md:p-5">
+    <div
+      inert={inert}
+      className={`pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-3 transition-opacity duration-700 md:p-5 ${closeUp ? "opacity-0 [&_*]:!pointer-events-none" : "opacity-100"}`}
+    >
       {/* 위 */}
       <div className="flex items-start justify-between gap-2">
         <button
@@ -531,6 +606,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
           {info.제목 ?? "작품 전시관"}
         </button>
         <div className="flex shrink-0 gap-2">
+          <SoundButton />
           <AutoButton />
           <button onClick={() => toggleList(true)} className={`${btn} whitespace-nowrap px-4 py-2 text-sm font-bold`}>
             작품 목록
@@ -704,6 +780,7 @@ export function OpenGallery() {
   useExhibition();
   useViewerHistory();
   useAutoTour();
+  useBgm();
   const arts = useGallery((s) => s.arts);
   const splashRun = useGallery((s) => s.splashRun);
   const open = useGallery((s) => s.detail !== null);

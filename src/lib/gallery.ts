@@ -48,10 +48,13 @@ export const WALK = {
 
 /** 자동 관람 (손대지 않아도 한 작품씩 걸어가 머문다) */
 export const AUTO = {
-  /** 작품 앞에 머무는 시간 (ms) — 설명이 길면 글자 수만큼 조금 더 */
-  dwell: 6500,
+  /** 작품 앞에 머무는 시간 (ms) — 설명이 길면 글자 수만큼 조금 더. 이 안에서 가까이 다가갔다 물러난다 */
+  dwell: 9500,
   dwellPerChar: 40,
-  dwellMax: 11000,
+  dwellMax: 13000,
+  /** 도착해서 가까이 다가가기 시작할 때까지, 물러나기 시작해서 떠날 때까지 (ms) */
+  closeUpAfter: 1400,
+  closeUpBefore: 2000,
   /** 걷는 최고 속도 (m/s) — 수동(한 걸음에 휙)보다 천천히, 영상처럼 */
   speed: 5,
   /** 따라가는 빠르기 (수동은 2.4) */
@@ -400,6 +403,8 @@ interface GalleryState {
 
   /** 하늘에서 보기 (광장 위로 올라가 작품 원 전체를 내려다본다) */
   overview: boolean;
+  /** 작품 가까이 보기 (자동 관람이 작품마다 다가가 화면을 채운다) */
+  closeUp: boolean;
 
   /** 카메라를 걷지 않고 목표 자리로 바로 옮긴 횟수 (CameraRig 가 바뀌면 순간 이동) */
   cut: number;
@@ -452,6 +457,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
   toggleList: (v) => set((s) => ({ listOpen: v ?? !s.listOpen })),
 
   overview: false,
+  closeUp: false,
 
   cut: 0,
   splashRun: 0,
@@ -501,7 +507,8 @@ export function jumpTo(t: number) {
 
 /** 자동 관람 멈춤 (보는 사람이 직접 움직이면 부른다) */
 export function pauseAuto() {
-  if (useGallery.getState().autoplay) useGallery.setState({ autoplay: false, autoDwell: null });
+  const s = useGallery.getState();
+  if (s.autoplay || s.closeUp) useGallery.setState({ autoplay: false, autoDwell: null, closeUp: false });
 }
 
 /** 자동 관람이 다음 작품으로 (원 위라면 마지막 다음은 분수를 돌아 첫 작품, 이어 돌지 못하면 처음으로 되돌아간다) */
