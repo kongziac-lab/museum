@@ -414,6 +414,8 @@ interface GalleryState {
   splashUp: boolean;
   /** 한글날 도입 영상(src/remotion)을 트는 중 */
   film: boolean;
+  /** '시작'을 누른 횟수 — 늘면 영상 → 정문 → 자동 관람을 처음부터 이어 튼다 (useAutoTour 가 본다) */
+  showRequest: number;
   /** 영상 음악 등 (public/audio, 빌드 스크립트가 알려 준다) */
   music: { film?: string } | null;
 
@@ -467,6 +469,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
   splashRun: 0,
   splashUp: true,
   film: false,
+  showRequest: 0,
   music: null,
 
   autoplay: false,
@@ -509,6 +512,11 @@ export function playAuto() {
 /** 카메라를 걷지 않고 t 자리로 바로 옮긴다 (화면이 가려져 있을 때만 쓴다) */
 export function jumpTo(t: number) {
   useGallery.setState((s) => ({ target: t, current: t, cut: s.cut + 1 }));
+}
+
+/** 처음부터 끝없이: 한글날 영상 → 정문 화면 → 자동 관람 → … (기념 화면의 '시작') */
+export function requestShow() {
+  useGallery.setState((s) => ({ showRequest: s.showRequest + 1 }));
 }
 
 /** 자동 관람 멈춤 (보는 사람이 직접 움직이면 부른다) */

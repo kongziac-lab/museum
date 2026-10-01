@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useProgress } from "@react-three/drei";
 import { AnimatePresence, motion } from "framer-motion";
-import { useGallery } from "@/lib/gallery";
+import { requestShow, useGallery } from "@/lib/gallery";
 import type { Commemoration } from "@/lib/types";
 
 /*
@@ -183,7 +183,12 @@ function Badge({ ring, delay }: { ring: string; delay: number }) {
   );
 }
 
-export function Splash({ replay = false }: { replay?: boolean }) {
+/**
+ * tapToStart: 다 불러오면 저절로 걷히지 않고 '▶ 시작'을 보인다. 누르면(화면 어디든·Enter) 걷히며
+ * 한글날 영상 → 정문 → 자동 관람이 소리와 함께 끝없이 이어지고(누름이 있어야 브라우저가 소리를 허락한다),
+ * '바로 둘러보기'는 영상 없이 정문 화면으로.
+ */
+export function Splash({ replay = false, tapToStart = false }: { replay?: boolean; tapToStart?: boolean }) {
   const loaded = useGallery((s) => s.loaded);
   const sceneryReady = useGallery((s) => s.sceneryReady);
   const info = useGallery((s) => s.info);
@@ -194,11 +199,29 @@ export function Splash({ replay = false }: { replay?: boolean }) {
 
   const [t0] = useState(() => performance.now());
   const [done, setDone] = useState(false);
-  // 배경을 끝내 못 불러와도 MAX_MS 가 지나면 걷는다
+  /** '시작'을 기다리는 중 (tapToStart) */
+  const [waiting, setWaiting] = useState(false);
+  // 배경을 끝내 못 불러와도 MAX_MS 가 지나면 걷는다 (누르기를 기다리는 판이면 '시작'을 보인다)
   useEffect(() => {
-    const id = window.setTimeout(() => setDone(true), MAX_MS);
+    const id = window.setTimeout(() => (tapToStart ? setWaiting(true) : setDone(true)), MAX_MS);
     return () => window.clearTimeout(id);
-  }, []);
+  }, [tapToStart]);
+  const begin = (show: boolean) => {
+    if (done) return;
+    setDone(true);
+    if (show) requestShow();
+  };
+  useEffect(() => {
+    if (!waiting || done) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        begin(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   // 불러온 만큼 부드럽게 센다 (다 불러오기 전에는 99 에서 멈춘다)
   const target = ready ? 100 : Math.min(99, Math.round(progress));
@@ -219,9 +242,9 @@ export function Splash({ replay = false }: { replay?: boolean }) {
   // 100 까지 다 센 뒤에 걷는다 (너무 빨리 불러와도 MIN_MS 는 보여 준다)
   useEffect(() => {
     if (!ready || n < 100) return;
-    const id = window.setTimeout(() => setDone(true), Math.max(0, (replay ? REPLAY_MS : MIN_MS) - (performance.now() - t0)) + 300);
+    const id = window.setTimeout(() => (tapToStart ? setWaiting(true) : setDone(true)), Math.max(0, (replay ? REPLAY_MS : MIN_MS) - (performance.now() - t0)) + 300);
     return () => window.clearTimeout(id);
-  }, [ready, n, t0, replay]);
+  }, [ready, n, t0, replay, tapToStart]);
 
   const D = 0.15;
   const items: Commemoration[] = info.기념?.length
@@ -254,6 +277,8 @@ export function Splash({ replay = false }: { replay?: boolean }) {
           className="absolute inset-0 z-[60] flex flex-col overflow-hidden bg-[#06122b] text-white [word-break:keep-all] [--badge:clamp(80px,min(24vw,12vh),158px)] [--num:clamp(60px,min(24vw,10.5vh),176px)] md:[--badge:clamp(96px,min(11vw,18vh),172px)] md:[--num:clamp(64px,min(13.5vw,22vh),220px)]"
           initial={{ y: replay ? "-101%" : 0 }}
           animate={{ y: 0, transition: { duration: 0.9, ease: [0.7, 0, 0.3, 1] } }}
+          onClick={waiting ? () => begin(true) : undefined}
+          style={waiting ? { cursor: "pointer" } : undefined}
           exit={{ y: "-101%", transition: { duration: 0.9, ease: [0.7, 0, 0.3, 1] } }}
         >
           {/* 위: 학당 이름 · 한글날 */}
@@ -294,11 +319,36 @@ export function Splash({ replay = false }: { replay?: boolean }) {
                 <p className="sp-serif text-[18px] font-black leading-tight tracking-[0.02em] md:text-[clamp(20px,2vw,26px)] [@media(max-height:520px)]:text-[16px]">
                   {title} <span className="font-semibold text-white/70">{sub}</span>
                 </p>
-                <p className="sp-mono sp-blink mt-1.5 text-[10px] tracking-[0.3em] text-white/55 md:text-[11px]">{ready ? "READY — 전시장으로" : "LOADING — 전시장을 준비하고 있어요"}</p>
+                <p className="sp-mono sp-blink mt-1.5 text-[10px] tracking-[0.3em] text-white/55 md:text-[11px]">
+                  {waiting ? "READY — 화면을 누르면 시작합니다" : ready ? "READY — 전시장으로" : "LOADING — 전시장을 준비하고 있어요"}
+                </p>
               </div>
-              <span className="sp-mono shrink-0 text-[44px] font-medium leading-none tracking-[0.04em] tabular-nums md:text-[64px] [@media(max-height:520px)]:text-[34px]" aria-hidden>
-                {String(n).padStart(3, "0")}
-              </span>
+              {waiting ? (
+                <div className="flex shrink-0 items-center gap-3 md:gap-4">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      begin(false);
+                    }}
+                    className="sp-mono text-[11px] tracking-[0.2em] text-white/60 underline-offset-4 transition hover:text-white hover:underline md:text-[12px]"
+                  >
+                    바로 둘러보기
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      begin(true);
+                    }}
+                    className="sp-serif rounded-full bg-[#f4ead5] px-6 py-3 text-[18px] font-black text-[#06122b] shadow-[0_0_0_6px_rgba(244,234,213,0.15)] transition hover:bg-white active:scale-95 md:px-8 md:py-3.5 md:text-[22px]"
+                  >
+                    ▶ 시작
+                  </button>
+                </div>
+              ) : (
+                <span className="sp-mono shrink-0 text-[44px] font-medium leading-none tracking-[0.04em] tabular-nums md:text-[64px] [@media(max-height:520px)]:text-[34px]" aria-hidden>
+                  {String(n).padStart(3, "0")}
+                </span>
+              )}
             </div>
           </div>
 

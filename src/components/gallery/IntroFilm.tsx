@@ -40,6 +40,8 @@ export default function IntroFilm() {
     setMuted(!muted);
   };
   const close = () => useGallery.setState({ film: false });
+  // 기념 화면이 걷히는 밑에서 시작할 때는 내려오지 않고 그 자리에 (기념 화면이 걷히며 드러난다)
+  const [underSplash] = useState(() => useGallery.getState().splashUp);
 
   useEffect(() => {
     const p = ref.current;
@@ -57,7 +59,7 @@ export default function IntroFilm() {
     <motion.div
       key="film"
       className="absolute inset-0 z-[55] bg-[#06122b]"
-      initial={{ y: "-101%" }}
+      initial={{ y: underSplash ? 0 : "-101%" }}
       animate={{ y: 0, transition: { duration: 0.9, ease: [0.7, 0, 0.3, 1] } }}
       exit={{ opacity: 0, transition: { duration: 0.8 } }}
       role="dialog"

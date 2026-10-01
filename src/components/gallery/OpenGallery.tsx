@@ -99,6 +99,7 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 
     const onKey = (e: KeyboardEvent) => {
       const s = useGallery.getState();
+      if (s.splashUp) return; // 기념 화면의 '시작'이 받는다
       if (s.film) {
         if (e.key === "Escape") useGallery.setState({ film: false });
         return;
@@ -183,6 +184,7 @@ function useAutoTour() {
       }
     };
     let at = Number.NaN; // 머물고 있는 작품 번호
+    let lastShow = useGallery.getState().showRequest;
     /** 영상 → 정문 화면 → 자동 관람. 관람 중이었으면 영상이 덮은 뒤 카메라를 정문으로 옮긴다 */
     const beginReplay = (now: number, fromTour: boolean) => {
       useGallery.setState({ autoplay: false, autoReplay: true, autoDwell: null, closeUp: false, overview: false, started: false, film: true });
@@ -193,6 +195,13 @@ function useAutoTour() {
     const tick = () => {
       const s = useGallery.getState();
       const now = performance.now();
+      // 기념 화면에서 '시작'을 눌렀다 → 영상부터 끝없이
+      if (s.showRequest !== lastShow) {
+        lastShow = s.showRequest;
+        if (bgmWanted()) bgm.start();
+        beginReplay(now, false);
+        return;
+      }
       if (cutAt && now >= cutAt) {
         cutAt = 0;
         jumpTo(-1);
@@ -808,6 +817,8 @@ export function OpenGallery() {
   useBgm();
   const arts = useGallery((s) => s.arts);
   const splashRun = useGallery((s) => s.splashRun);
+  // 행사장 화면(?auto)은 누르지 않아도 저절로 시작, 그 밖에는 기념 화면에서 '시작'을 한 번 누른다
+  const [kiosk] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("auto"));
   const open = useGallery((s) => s.detail !== null);
   const film = useGallery((s) => s.film);
   // 불러오는 동안(기념 화면이 3D 를 가림)과 크게 보기 중에는 천천히 그린다
@@ -850,7 +861,7 @@ export function OpenGallery() {
       <ListOverlay />
       <ArtViewer />
       <AnimatePresence>{film && <IntroFilm key="film" />}</AnimatePresence>
-      <Splash key={splashRun} replay={splashRun > 0} />
+      <Splash key={splashRun} replay={splashRun > 0} tapToStart={!kiosk && splashRun === 0} />
     </div>
   );
 }
