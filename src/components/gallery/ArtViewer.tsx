@@ -15,7 +15,14 @@ import type { ArtworkSource } from "@/lib/types";
  *  - 가로 작품을 세로로 든 휴대폰에서: '가로로 보기'가 보기 화면만 90° 돌린다 (화면 회전 잠금·카카오톡에서도 된다).
  *    휴대폰을 실제로 돌리면 저절로 풀린다.
  * 화면을 한 번 누르면 작품만 보기(설명·버튼 숨김), 다시 누르면 돌아온다. 옆으로 밀면 이전·다음, 아래로 밀면 닫기.
+ * 휴대폰: 두 손가락으로 벌리면 확대(최대 ZOOM_MAX배), 두 번 누르면 그 자리를 확대 ↔ 원래 크기.
+ *  확대한 동안은 한 손가락으로 끌어 옮겨 보고(넘기기·닫기 밀기는 쉰다), 설명·버튼은 숨겨 작품이 화면을 다 쓴다.
  */
+
+const ZOOM_MAX = 4;
+const ZOOM_TAP = 2.5;
+/** 한 번 누르기(작품만 보기)를 두 번 누르기(확대)와 가르려고 기다리는 시간 */
+const DOUBLE_TAP_MS = 280;
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Mode = "stack" | "rail" | "compact" | "slim" | "desk";
@@ -250,7 +257,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
   useEffect(() => {
     if (!touch || readSession("viewer-hint")) return;
     writeSession("viewer-hint");
-    showToast(canRotate ? "‘가로로 보기’를 누르면 작품이 더 커져요" : "화면을 누르면 작품만 · 옆으로 밀면 다음 작품");
+    showToast(canRotate ? "‘가로로 보기’를 누르면 작품이 더 커져요" : "두 손가락으로 벌리면 확대 · 옆으로 밀면 다음 작품");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // 아주 좁은 기둥(아이콘만)일 때는 작품을 넘길 때마다 이름을 잠깐 띄운다
@@ -302,20 +309,158 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
     const r = frameRef.current!.getBoundingClientRect();
     return rot ? { x: e.clientY - r.top, y: r.right - e.clientX } : { x: e.clientX - r.left, y: e.clientY - r.top };
   };
+
+  /* ── 확대 (휴대폰) ── 작품 상자 가운데를 기준으로 zoomX·zoomY 만큼 옮기고 zoomS 배 */
+  const zoomS = useMotionValue(1);
+  const zoomX = useMotionValue(0);
+  const zoomY = useMotionValue(0);
+  const [zoomed, setZoomedState] = useState(false);
+  const setZoomed = (v: boolean) => setZoomedState((p) => (p === v ? p : v));
+  const pts = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<null | { d0: number; s0: number; qx: number; qy: number }>(null);
+  const pan = useRef<null | { id: number; x0: number; y0: number; px: number; py: number; t0: number; moved: boolean }>(null);
+  const lastTap = useRef<null | { x: number; y: number; t: number }>(null);
+  const tapTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(tapTimer.current), []);
+  const cx = artRect.x + artRect.w / 2;
+  const cy = artRect.y + artRect.h / 2;
+  /** 확대한 작품이 화면 밖으로 달아나지 않게: 화면보다 작으면 화면 안에, 크면 화면을 덮도록 */
+  const clampPan = (s: number, x: number, y: number) => {
+    const w = artRect.w * s;
+    const h = artRect.h * s;
+    const lim = (v: number, a: number, b: number) => Math.min(Math.max(v, Math.min(a, b)), Math.max(a, b));
+    return { x: lim(x, w / 2 - cx, W - w / 2 - cx), y: lim(y, h / 2 - cy, H - h / 2 - cy) };
+  };
+  const spring = { type: "spring", stiffness: 420, damping: 40 } as const;
+  const zoomTo = (s: number, x: number, y: number) => {
+    const c = clampPan(s, x, y);
+    animate(zoomS, s, spring);
+    animate(zoomX, s > 1 ? c.x : 0, spring);
+    animate(zoomY, s > 1 ? c.y : 0, spring);
+    setZoomed(s > 1);
+  };
+  const resetZoom = () => zoomTo(1, 0, 0);
+  /** 손을 뗐을 때: 거의 원래 크기면 원래대로, 아니면 화면 안으로 */
+  const settleZoom = () => {
+    const s = zoomS.get();
+    if (s < 1.05) resetZoom();
+    else zoomTo(Math.min(s, ZOOM_MAX), zoomX.get(), zoomY.get());
+  };
+  // 다른 작품으로 넘어가거나 화면을 돌리면 원래 크기로
+  useEffect(() => {
+    zoomS.set(1);
+    zoomX.set(0);
+    zoomY.set(0);
+    setZoomedState(false);
+    pinch.current = null;
+    pan.current = null;
+  }, [index, rot, zoomS, zoomX, zoomY]);
+  // iPhone 사파리가 두 손가락 벌리기를 화면 전체 확대로 가져가지 않게
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const stop = (e: Event) => e.preventDefault();
+    el.addEventListener("gesturestart", stop);
+    el.addEventListener("gesturechange", stop);
+    return () => {
+      el.removeEventListener("gesturestart", stop);
+      el.removeEventListener("gesturechange", stop);
+    };
+  }, []);
+  /** 휴대폰에서 누르기: 두 번 누르면 확대 ↔ 원래 크기, 한 번이면 (잠깐 기다렸다) 작품만 보기 ↔ 설명 */
+  const tap = (p: { x: number; y: number }) => {
+    const now = performance.now();
+    const prev = lastTap.current;
+    if (prev && now - prev.t < DOUBLE_TAP_MS && Math.hypot(p.x - prev.x, p.y - prev.y) < 40) {
+      window.clearTimeout(tapTimer.current);
+      lastTap.current = null;
+      if (zoomS.get() > 1.01) resetZoom();
+      else {
+        // 누른 곳이 그 자리에 머물도록 확대
+        zoomTo(ZOOM_TAP, (p.x - cx) * (1 - ZOOM_TAP), (p.y - cy) * (1 - ZOOM_TAP));
+        if (!readSession("viewer-zoom")) {
+          writeSession("viewer-zoom");
+          showToast("두 번 누르면 원래 크기로");
+        }
+      }
+      return;
+    }
+    lastTap.current = { ...p, t: now };
+    window.clearTimeout(tapTimer.current);
+    tapTimer.current = window.setTimeout(() => {
+      lastTap.current = null;
+      // 확대한 동안은 설명·버튼이 어차피 숨어 있으니 한 번 누르기는 쉰다
+      if (zoomS.get() <= 1.01) setChrome((c) => !c);
+    }, DOUBLE_TAP_MS);
+  };
+  const startPinch = () => {
+    const [a, b] = [...pts.current.values()];
+    const s0 = zoomS.get();
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    pinch.current = { d0: Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1), s0, qx: (mx - cx - zoomX.get()) / s0, qy: (my - cy - zoomY.get()) / s0 };
+  };
+  const startPan = (id: number, p: { x: number; y: number }) => {
+    pan.current = { id, x0: p.x, y0: p.y, px: zoomX.get(), py: zoomY.get(), t0: performance.now(), moved: false };
+  };
+
   const onDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("button, a, [data-noswipe]")) return;
-    if (!e.isPrimary || busy.current) return;
-    // 화면 양끝 20px 은 휴대폰의 '뒤로' 밀기 자리
-    if (e.pointerType !== "mouse" && (e.clientX < 20 || e.clientX > window.innerWidth - 20)) return;
+    if (busy.current) return;
+    const mouse = e.pointerType === "mouse";
+    // 화면 양끝 20px 은 휴대폰의 '뒤로' 밀기 자리 (첫 손가락만)
+    if (!mouse && pts.current.size === 0 && (e.clientX < 20 || e.clientX > window.innerWidth - 20)) return;
     const p = local(e);
-    g.current = { id: e.pointerId, x0: p.x, y0: p.y, t0: performance.now(), axis: null, dx: 0, dy: 0, mouse: e.pointerType === "mouse", hist: [{ ...p, t: performance.now() }] };
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
       /* 캡처 못 해도 틀 안에서는 따라간다 */
     }
+    if (!mouse) {
+      pts.current.set(e.pointerId, p);
+      if (pts.current.size === 2) {
+        // 두 번째 손가락: 넘기기·옮기기를 멈추고 벌리기로
+        if (g.current) {
+          g.current = null;
+          settle();
+        }
+        pan.current = null;
+        lastTap.current = null;
+        window.clearTimeout(tapTimer.current);
+        startPinch();
+        return;
+      }
+      if (pts.current.size > 2) return;
+      if (zoomS.get() > 1.01) {
+        startPan(e.pointerId, p);
+        return;
+      }
+    }
+    if (!e.isPrimary) return;
+    g.current = { id: e.pointerId, x0: p.x, y0: p.y, t0: performance.now(), axis: null, dx: 0, dy: 0, mouse, hist: [{ ...p, t: performance.now() }] };
   };
   const onMove = (e: React.PointerEvent) => {
+    if (pts.current.has(e.pointerId)) pts.current.set(e.pointerId, local(e));
+    const pz = pinch.current;
+    if (pz && pts.current.size >= 2) {
+      const [a, b] = [...pts.current.values()];
+      const s = Math.min(Math.max((pz.s0 * Math.hypot(a.x - b.x, a.y - b.y)) / pz.d0, 0.85), ZOOM_MAX * 1.15);
+      zoomS.set(s);
+      // 처음 두 손가락 사이에 있던 작품 지점이 지금 두 손가락 사이에 오도록
+      zoomX.set((a.x + b.x) / 2 - cx - s * pz.qx);
+      zoomY.set((a.y + b.y) / 2 - cy - s * pz.qy);
+      setZoomed(s > 1.01);
+      return;
+    }
+    const pn = pan.current;
+    if (pn && e.pointerId === pn.id) {
+      const p = local(e);
+      if (Math.hypot(p.x - pn.x0, p.y - pn.y0) > 8) pn.moved = true;
+      const c = clampPan(zoomS.get(), pn.px + p.x - pn.x0, pn.py + p.y - pn.y0);
+      zoomX.set(c.x);
+      zoomY.set(c.y);
+      return;
+    }
     const s = g.current;
     if (!s || e.pointerId !== s.id) return;
     const p = local(e);
@@ -377,6 +522,26 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
     },
   });
   const onUp = (e: React.PointerEvent) => {
+    pts.current.delete(e.pointerId);
+    if (pinch.current) {
+      if (pts.current.size < 2) {
+        pinch.current = null;
+        settleZoom();
+        // 한 손가락이 남아 있으면 이어서 옮기기
+        const rest = [...pts.current.entries()][0];
+        if (rest && zoomS.get() > 1.01) startPan(rest[0], rest[1]);
+      }
+      return;
+    }
+    const pn = pan.current;
+    if (pn && e.pointerId === pn.id) {
+      pan.current = null;
+      if (!pn.moved && performance.now() - pn.t0 < 400) {
+        if (sheet) setSheet(null);
+        else tap({ x: pn.x0, y: pn.y0 });
+      }
+      return;
+    }
     const s = g.current;
     if (!s || e.pointerId !== s.id) return;
     g.current = null;
@@ -393,7 +558,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
         const r = artRect;
         const inside = p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
         if (!inside) closeViewer();
-      } else setChrome((c) => !c);
+      } else tap({ x: s.x0, y: s.y0 });
       return;
     }
     if (s.axis === "x" && (Math.abs(s.dx) > Math.max(56, 0.18 * W) || (Math.abs(vx) > 0.4 && Math.abs(s.dx) > 24))) {
@@ -406,7 +571,14 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
     }
     settle();
   };
-  const onCancel = () => {
+  const onCancel = (e: React.PointerEvent) => {
+    pts.current.delete(e.pointerId);
+    if (pinch.current || pan.current) {
+      pinch.current = null;
+      pan.current = null;
+      settleZoom();
+      return;
+    }
     // 밀던 중이었을 때만 되돌린다 (버튼을 누르다 취소된 것까지 넘기는 중인 작품을 끌어오지 않게)
     if (!g.current) return;
     g.current = null;
@@ -420,7 +592,9 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
   const prevOff = !loop && index <= 0;
   const nextOff = !loop && index >= n - 1;
   const counter = `${index + 1} / ${n}`;
-  const hideCls = chrome ? "opacity-100" : "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100";
+  // 확대한 동안에도 설명·버튼을 숨겨 작품이 화면을 다 쓰게 한다
+  const showChrome = chrome && !zoomed;
+  const hideCls = showChrome ? "opacity-100" : "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100";
 
   const railNav = (
     <div className="mt-2 flex gap-2">
@@ -516,31 +690,33 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             >
               <motion.div className="h-full w-full" style={{ x: dragX, y: dragY, scale: dragScale }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <motion.img
-                  key={art.src}
-                  src={art.src}
-                  alt={`${name}${nat ? `(${nat})` : ""}의 한글 이름 작품`}
-                  width={art.width}
-                  height={art.height}
-                  draggable={false}
-                  decoding="async"
-                  onLoad={(e) => {
-                    const im = e.currentTarget;
-                    if (!art.width && im.naturalWidth) setNatural(im.naturalWidth / im.naturalHeight);
-                  }}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.18 }}
-                  className="pointer-events-none h-full w-full select-none object-contain [-webkit-touch-callout:none]"
-                />
+                <motion.div className="h-full w-full" style={{ x: zoomX, y: zoomY, scale: zoomS }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <motion.img
+                    key={art.src}
+                    src={art.src}
+                    alt={`${name}${nat ? `(${nat})` : ""}의 한글 이름 작품`}
+                    width={art.width}
+                    height={art.height}
+                    draggable={false}
+                    decoding="async"
+                    onLoad={(e) => {
+                      const im = e.currentTarget;
+                      if (!art.width && im.naturalWidth) setNatural(im.naturalWidth / im.naturalHeight);
+                    }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.18 }}
+                    className="pointer-events-none h-full w-full select-none object-contain [-webkit-touch-callout:none]"
+                  />
+                </motion.div>
               </motion.div>
             </motion.div>
 
             {/* 옆으로 돌린 휴대폰: 작품 양옆 가운데 ‹ › (가장자리에서 떨어진 자리) */}
             {navTop && (
               <div
-                className={`pointer-events-none absolute z-[5] transition-opacity duration-200 ${chrome && !sheet ? "opacity-100" : "opacity-0"}`}
+                className={`pointer-events-none absolute z-[5] transition-opacity duration-200 ${showChrome && !sheet ? "opacity-100" : "opacity-0"}`}
                 style={{ left: plan.art.x, top: plan.art.y, width: plan.art.w, height: plan.art.h }}
               >
                 {(
@@ -554,7 +730,7 @@ function Viewer({ art, index, arts }: { art: ArtworkSource; index: number; arts:
                     {...press(() => go(d))}
                     disabled={off}
                     aria-label={label}
-                    className={`absolute top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/50 pb-0.5 text-[28px] leading-none ring-1 ring-white/25 active:scale-95 disabled:hidden ${side} ${chrome && !sheet ? "pointer-events-auto" : ""}`}
+                    className={`absolute top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/50 pb-0.5 text-[28px] leading-none ring-1 ring-white/25 active:scale-95 disabled:hidden ${side} ${showChrome && !sheet ? "pointer-events-auto" : ""}`}
                   >
                     {glyph}
                   </button>
