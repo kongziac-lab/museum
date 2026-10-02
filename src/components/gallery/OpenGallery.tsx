@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useProgress } from "@react-three/drei";
@@ -429,6 +429,54 @@ function AwardChip({ award, small }: { award?: string; small?: boolean }) {
   );
 }
 
+/**
+ * 긴 이름도 다 보이도록 칸 폭에 맞춰 글자를 줄인다 (부모의 글자 크기에서 최소 min배까지).
+ * min배로도 한 줄에 안 들어가는 아주 긴 이름은 띄어쓰기에서 두 줄로 나누고, 두 줄에 들어가는 가장 큰 크기로.
+ * 글꼴이 늦게 올라오거나 칸 폭이 바뀌어도 다시 맞춘다.
+ */
+function FitText({ text, min = 0.55 }: { text: string; min?: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.fontSize = "";
+      el.style.whiteSpace = "";
+      const ratio = el.clientWidth / el.scrollWidth;
+      if (ratio >= 1) return;
+      const base = parseFloat(getComputedStyle(el).fontSize);
+      if (ratio >= min) {
+        el.style.fontSize = `${ratio * 0.98 * base}px`;
+        return;
+      }
+      el.style.whiteSpace = "normal";
+      for (let s = 1; s >= min; s -= 0.05) {
+        el.style.fontSize = `${s * base}px`;
+        const lh = parseFloat(getComputedStyle(el).lineHeight) || s * base * 1.3;
+        if (el.scrollHeight <= lh * 2 + 1 && el.scrollWidth <= el.clientWidth) return;
+      }
+    };
+    fit();
+    // 줄바꿈으로 높이만 바뀔 때는 다시 맞추지 않는다 (폭이 바뀔 때만)
+    let width = el.parentElement?.clientWidth ?? 0;
+    const ro = new ResizeObserver(() => {
+      const w = el.parentElement?.clientWidth ?? 0;
+      if (w !== width) {
+        width = w;
+        fit();
+      }
+    });
+    if (el.parentElement) ro.observe(el.parentElement);
+    document.fonts?.ready.then(fit);
+    return () => ro.disconnect();
+  }, [text, min]);
+  return (
+    <span ref={ref} className="block truncate [word-break:keep-all]">
+      {text}
+    </span>
+  );
+}
+
 const btn =
   "pointer-events-auto rounded-full bg-white/90 text-stone-800 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:opacity-35";
 
@@ -532,7 +580,9 @@ function Caption({ layout }: { layout: GalleryLayout | null }) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <AwardChip award={art.award} />
-              <h2 className="mt-2 truncate font-display text-2xl font-bold md:text-3xl">{art.name || art.title}</h2>
+              <h2 className="mt-2 font-display text-2xl font-bold md:text-3xl">
+                <FitText text={art.name || art.title} />
+              </h2>
               {(art.nameEn || art.nationality || art.classroom) && (
                 <p className="mt-0.5 truncate text-sm text-stone-500 md:text-base">
                   {[art.nameEn, art.nationality, art.classroom].filter(Boolean).join(" · ")}
@@ -758,7 +808,9 @@ function ListOverlay() {
                         <img src={a.thumb ?? a.src} alt={a.name} loading="lazy" className="h-full w-full object-contain transition group-hover:scale-[1.03]" />
                       </div>
                       <div className="p-3">
-                        <p className="truncate font-bold text-stone-800">{a.name || a.title}</p>
+                        <p className="font-bold text-stone-800">
+                          <FitText text={a.name || a.title} min={0.7} />
+                        </p>
                         <p className="truncate text-sm text-stone-500">{[a.nameEn, a.nationality, a.classroom].filter(Boolean).join(" · ")}</p>
                       </div>
                     </button>
