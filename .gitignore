@@ -53,3 +53,7 @@ next-env.d.ts
 
 # 배경 모델 작업 폴더 (scripts/scenery)
 /scenery-src
+
+# 수상작 원본 사진 (HEIC, 장당 1~2MB) — 전시에는 잘라 펴 낸 IMG_*.jpg 를 쓴다
+수상작/*.HEIC
+수상작/*.heic

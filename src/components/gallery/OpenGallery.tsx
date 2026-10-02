@@ -533,8 +533,10 @@ function Caption({ layout }: { layout: GalleryLayout | null }) {
             <div className="min-w-0">
               <AwardChip award={art.award} />
               <h2 className="mt-2 truncate font-display text-2xl font-bold md:text-3xl">{art.name || art.title}</h2>
-              {(art.nameEn || art.nationality) && (
-                <p className="mt-0.5 truncate text-sm text-stone-500 md:text-base">{[art.nameEn, art.nationality].filter(Boolean).join(" · ")}</p>
+              {(art.nameEn || art.nationality || art.classroom) && (
+                <p className="mt-0.5 truncate text-sm text-stone-500 md:text-base">
+                  {[art.nameEn, art.nationality, art.classroom].filter(Boolean).join(" · ")}
+                </p>
               )}
             </div>
             <span className="shrink-0 pt-1 text-xs tabular-nums text-stone-400">
@@ -757,7 +759,7 @@ function ListOverlay() {
                       </div>
                       <div className="p-3">
                         <p className="truncate font-bold text-stone-800">{a.name || a.title}</p>
-                        <p className="truncate text-sm text-stone-500">{[a.nameEn, a.nationality].filter(Boolean).join(" · ")}</p>
+                        <p className="truncate text-sm text-stone-500">{[a.nameEn, a.nationality, a.classroom].filter(Boolean).join(" · ")}</p>
                       </div>
                     </button>
                   ))}

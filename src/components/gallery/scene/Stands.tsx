@@ -51,27 +51,29 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
       g.fillStyle = "#1d1b19";
       fitText(g, art.name || art.title, 700, award ? 84 : 88, 700);
       g.fillText(art.name || art.title, 50, award ? 172 : 112);
+      // 국적 · 분반
+      const sub = [art.nationality, art.classroom].filter(Boolean).join(" · ");
       if (award) {
-        if (art.nationality) {
+        if (sub) {
           g.fillStyle = "#6b645c";
-          g.font = `500 44px ${FONT}`;
-          g.fillText(art.nationality, 50, 234);
+          fitText(g, sub, 500, 44, 700);
+          g.fillText(sub, 50, 234);
         }
       } else {
-        // 전시 모드: 영문 이름(알파벳 순으로 걸린다) · 국적
+        // 전시 모드: 영문 이름(CSV에 적은 때만) · 국적 · 분반 — 영문 이름이 없으면 국적 줄을 이름 바로 아래로
         if (art.nameEn) {
           g.fillStyle = "#4f4943";
           fitText(g, art.nameEn, 600, 46, 700);
           g.fillText(art.nameEn, 50, 172);
         }
-        if (art.nationality) {
+        if (sub) {
           g.fillStyle = "#8a817a";
-          g.font = `500 40px ${FONT}`;
-          g.fillText(art.nationality, 50, 230);
+          fitText(g, sub, 500, art.nameEn ? 40 : 46, 700);
+          g.fillText(sub, 50, art.nameEn ? 230 : 184);
         }
       }
     },
-    [art.award, art.name, art.nameEn, art.title, art.nationality, color]
+    [art.award, art.name, art.nameEn, art.title, art.nationality, art.classroom, color]
   );
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {

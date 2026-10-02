@@ -25,10 +25,12 @@ export interface ArtworkSource {
   /** ── 수상작 캡션 (수상작/수상작목록.csv) ── */
   /** 수상자 이름 */
   name?: string;
-  /** 영문 이름 (영문이름 열, 비어 있으면 한글 이름을 로마자로) */
+  /** 영문 이름 (영문이름 열, 비어 있으면 표시하지 않음) */
   nameEn?: string;
   /** 국적 */
   nationality?: string;
+  /** 분반 (분반 열, 예: "3반") */
+  classroom?: string;
   /** 수상 부문 (대상, 최우수상 …) */
   award?: string;
   /** 부문 순위 (0 = 가장 높은 부문) */

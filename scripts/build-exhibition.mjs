@@ -15,7 +15,7 @@
  *   "영문순"        — 영문 이름 알파벳 순, 구역 표지 없음
  *   "국적별"        — 같은 나라끼리 (3점 이상인 나라만 따로, 나머지는 '여러 나라'), 나라마다 표지
  *   "목록순"        — CSV 순서 그대로, 구역 표지 없음
- * 영문이름 열이 비어 있으면 한글 이름을 로마자(국어의 로마자 표기법)로 바꿔 쓴다.
+ * 영문이름 열이 비어 있으면 영문 이름을 표시하지 않는다 ("영문순"일 때만 한글 이름을 로마자(국어의 로마자 표기법)로 바꿔 순서를 정한다).
  * 수상부문을 채우면 '시상 모드'로 바뀌어 부문 순서대로 다시 걸리고(부문 안에서는 전시순서를 따른다), 가장 높은 부문의 첫 작품이 대표 작품이 된다.
  *
  * `npm run dev` / `npm run build` 전에 자동으로 실행된다 (predev / prebuild).
@@ -194,6 +194,7 @@ function readCaptions() {
     nation: findCol(header, ["국적", "나라", "국가", "nationality", "country"]),
     award: findCol(header, ["수상부문", "수상", "부문", "상", "award"]),
     desc: findCol(header, ["작품설명", "설명", "소감", "description"]),
+    ban: findCol(header, ["분반", "반", "class"]),
   };
   if (col.file < 0) {
     warn("CSV 첫 줄에 '파일명' 열이 없습니다.");
@@ -208,6 +209,8 @@ function readCaptions() {
     nation: get(r, col.nation),
     award: get(r, col.award),
     desc: get(r, col.desc),
+    // 숫자만 적어도 "3반"처럼 보이게
+    ban: get(r, col.ban).replace(/^(\d+)$/, "$1반"),
   }));
 }
 
@@ -233,7 +236,7 @@ async function shrink(from, to, px, quality) {
   }
 }
 
-/* 한글 → 로마자 (국어의 로마자 표기법, 음절 단위 — 영문이름을 비워 둔 때만 쓴다) */
+/* 한글 → 로마자 (국어의 로마자 표기법, 음절 단위 — 영문이름을 비워 둔 작품의 "영문순" 정렬에만 쓰고, 화면에는 내보내지 않는다) */
 const RR_INIT = ["g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h"];
 const RR_MED = ["a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i"];
 const RR_FIN = ["", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "l", "l", "l", "p", "l", "m", "p", "p", "t", "t", "ng", "t", "t", "k", "t", "p", "t"];
@@ -261,7 +264,7 @@ function romanize(ko) {
 
 /** 가나다 순 비교 (한글 이름, 같으면 CSV 순서) · 알파벳 순 비교 (영문 이름, 대소문자·악센트 무시) */
 const byKorean = (a, b) => a.name.localeCompare(b.name, "ko") || a.seq - b.seq;
-const byEnglish = (a, b) => a.en.localeCompare(b.en, "en", { sensitivity: "base" }) || a.seq - b.seq;
+const byEnglish = (a, b) => a.sortEn.localeCompare(b.sortEn, "en", { sensitivity: "base" }) || a.seq - b.seq;
 /** 전시순서 → 비교 함수 (목록순·국적별은 CSV 순서) */
 function orderOf(info) {
   const o = norm(info.전시순서);
@@ -338,7 +341,7 @@ async function main() {
   };
   entries.forEach((e, i) => {
     e.seq = i;
-    if (!e.en) e.en = romanize(e.name);
+    e.sortEn = e.en || romanize(e.name);
   });
   // 수상부문이 하나라도 적혀 있으면 시상 모드, 아니면 전시 모드
   const mode = entries.some((e) => e.award) ? "awards" : "exhibition";
@@ -387,6 +390,7 @@ async function main() {
       name: e.name,
       nameEn: e.en || undefined,
       nationality: e.nation,
+      classroom: e.ban || undefined,
       award: e.award,
       awardRank: rank(e.award),
       description: e.desc,
