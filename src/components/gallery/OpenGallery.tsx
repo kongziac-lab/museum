@@ -158,7 +158,8 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
 /* ───────────────────────── 자동 관람 ───────────────────────── */
 
 /**
- * 자동 관람: 작품 앞에 도착하면 dwellFor 만큼 머문 뒤 다음 작품으로 걷는다. 머무는 동안 캡션을 잠깐 보여 주고
+ * 자동 관람: 작품 앞에 도착하면 dwellFor 만큼 머문 뒤 다음 작품으로 걷는다.
+ * 마지막 작품 뒤에는 영상의 끝과 같게 하늘로 올라가 작품 원을 내려다보며 전시 제목을 띄운다(AUTO.finaleMs). 머무는 동안 캡션을 잠깐 보여 주고
  * 작품 정면으로 다가가 작품이 화면을 채웠다가(closeUp, 화면 위 버튼·캡션은 사라진다) 떠나기 전에 물러난다.
  * 마지막 작품까지 보면 완전히 처음으로 — 한글날 도입 영상(1분, 끝이 580돌·100돌 화면)이 위에서 내려와 덮고,
  * 그사이 카메라는 정문으로 옮기고, 영상이 끝나면 정문 화면을 AUTO.introHold 동안 보여 준 뒤 다시 걸어 들어간다.
@@ -176,18 +177,24 @@ function useAutoTour() {
     let cutAt = 0; // 기념 화면이 다 내려와 덮으면 카메라를 정문으로
     let replay = false; // 기념 화면 → 정문 화면을 거쳐 다시 자동 관람하려고 기다리는 중
     let introSince = 0; // 기념 화면이 다 걷힌 때 (정문 화면을 보여 주기 시작한 때)
+    let finaleUntil = 0; // 마무리(하늘에서 전시 제목)가 끝나는 때
     const touched = () => {
       lastInput = performance.now();
       if (replay) {
         replay = false;
         useGallery.setState({ autoReplay: false });
       }
+      // 마무리 중에 만지면 멈추고 하늘에서 보기로 넘겨준다 (작품을 누르면 내려간다)
+      if (finaleUntil) {
+        finaleUntil = 0;
+        useGallery.setState({ finale: false, autoplay: false, autoDwell: null });
+      }
     };
     let at = Number.NaN; // 머물고 있는 작품 번호
     let lastShow = useGallery.getState().showRequest;
     /** 영상 → 정문 화면 → 자동 관람. 관람 중이었으면 영상이 덮은 뒤 카메라를 정문으로 옮긴다 */
     const beginReplay = (now: number, fromTour: boolean) => {
-      useGallery.setState({ autoplay: false, autoReplay: true, autoDwell: null, closeUp: false, overview: false, started: false, film: true });
+      useGallery.setState({ autoplay: false, autoReplay: true, autoDwell: null, closeUp: false, overview: false, finale: false, started: false, film: true });
       cutAt = fromTour ? now + 1000 : 0;
       replay = true;
       introSince = 0;
@@ -234,6 +241,14 @@ function useAutoTour() {
           return;
         }
       }
+      // 마무리: 하늘에서 내려다보다가 → 한글날 영상부터 다시
+      if (finaleUntil) {
+        if (now >= finaleUntil) {
+          finaleUntil = 0;
+          beginReplay(now, true);
+        }
+        return;
+      }
       if (!s.autoplay) return;
       if (!s.started) {
         pauseAuto();
@@ -260,8 +275,9 @@ function useAutoTour() {
       if (spent >= s.autoDwell.ms) {
         at = Number.NaN;
         if (here === n - 1 && n > 1) {
-          // 한 바퀴 끝 → 완전히 처음(한글날 영상)부터
-          beginReplay(now, true);
+          // 한 바퀴 끝 → 하늘로 올라가 마무리 → 완전히 처음(한글날 영상)부터
+          useGallery.setState({ autoDwell: null, closeUp: false, overview: true, finale: true });
+          finaleUntil = now + AUTO.finaleMs;
           return;
         }
         useGallery.setState({ autoDwell: null });
@@ -396,6 +412,32 @@ function SoundButton() {
         )}
       </svg>
     </button>
+  );
+}
+
+/** 자동 관람 마무리: 하늘에서 내려다보는 동안 가운데 전시 제목 (영상의 끝과 같은 모양) */
+function FinaleTitle() {
+  const finale = useGallery((s) => s.finale);
+  const info = useGallery((s) => s.info);
+  return (
+    <AnimatePresence>
+      {finale && (
+        <motion.div
+          key="finale"
+          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-6 text-center text-white [text-shadow:0_3px_24px_rgba(0,0,0,0.6)]"
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0, transition: { delay: 1.6, duration: 1.2 } }}
+          exit={{ opacity: 0, transition: { duration: 0.6 } }}
+        >
+          <div>
+            {info.상단문구 && <p className="text-base opacity-90 md:text-xl">{info.상단문구}</p>}
+            <h2 className="mt-2 font-display text-4xl font-black leading-tight md:text-7xl">{info.제목 ?? "한글 이름 꾸미기 대회"}</h2>
+            <p className="mt-2 font-display text-2xl font-bold md:text-4xl">{info.부제 ?? "작품 전시관"}</p>
+            {info.기념일 && <p className="sp-mono mt-6 text-xs tracking-[0.3em] opacity-85 md:text-base">HANGUL DAY · {info.기념일}</p>}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -658,6 +700,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
   const autoplay = useGallery((s) => s.autoplay);
   const overview = useGallery((s) => s.overview);
   const closeUp = useGallery((s) => s.closeUp);
+  const finale = useGallery((s) => s.finale);
   const idx = Math.round(target);
   const n = arts.length;
   const stop = stopIndex(idx, n);
@@ -677,7 +720,7 @@ function Hud({ layout, inert }: { layout: GalleryLayout | null; inert: boolean }
   return (
     <div
       inert={inert}
-      className={`pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-3 transition-opacity duration-700 md:p-5 ${closeUp ? "opacity-0 [&_*]:!pointer-events-none" : "opacity-100"}`}
+      className={`pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-3 transition-opacity duration-700 md:p-5 ${closeUp || finale ? "opacity-0 [&_*]:!pointer-events-none" : "opacity-100"}`}
     >
       {/* 위 */}
       <div className="flex items-start justify-between gap-2">
@@ -912,6 +955,7 @@ export function OpenGallery() {
       </Canvas>
       <Intro />
       <Hud layout={layout} inert={open} />
+      <FinaleTitle />
       <ListOverlay />
       <ArtViewer />
       <AnimatePresence>{film && <IntroFilm key="film" />}</AnimatePresence>

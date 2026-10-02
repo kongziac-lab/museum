@@ -5,15 +5,39 @@ import * as THREE from "three";
 
 export const FONT = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", sans-serif';
 
-/** 배경 에셋 (scripts/scenery/ 로 만든 것) */
+/**
+ * 파일 주소 앞에 붙일 것: 전시관은 사이트 루트("")라 그대로, Remotion 으로 3D 를 영상으로 뽑을 때는
+ * public 폴더가 다른 주소에 열리므로 src/remotion/assetBase.ts 가 그 앞부분을 정해 준다.
+ */
+let ASSET_BASE = "";
+export function setAssetBase(base: string) {
+  ASSET_BASE = base.replace(/\/$/, "");
+}
+export function asset(path: string) {
+  return ASSET_BASE && path.startsWith("/") ? ASSET_BASE + path : path;
+}
+
+/** 배경 에셋 (scripts/scenery/ 로 만든 것) — 쓸 때마다 주소를 만든다 (asset 앞부분이 나중에 정해져도 맞게) */
 export const SCENERY = {
-  hdr: "/scenery/env/sky_1k.hdr",
-  bg: { high: "/scenery/env/sky_bg_6k.jpg", low: "/scenery/env/sky_bg_4k.jpg" },
-  fountain: "/scenery/fountain.glb",
-  trees: "/scenery/trees.glb",
-  campus: "/scenery/campus.glb",
-  draco: "/draco/",
-  tex: (name: string) => `/scenery/tex/${name}.jpg`,
+  get hdr() {
+    return asset("/scenery/env/sky_1k.hdr");
+  },
+  get bg() {
+    return { high: asset("/scenery/env/sky_bg_6k.jpg"), low: asset("/scenery/env/sky_bg_4k.jpg") };
+  },
+  get fountain() {
+    return asset("/scenery/fountain.glb");
+  },
+  get trees() {
+    return asset("/scenery/trees.glb");
+  },
+  get campus() {
+    return asset("/scenery/campus.glb");
+  },
+  get draco() {
+    return asset("/draco/");
+  },
+  tex: (name: string) => asset(`/scenery/tex/${name}.jpg`),
 };
 
 /**
@@ -63,6 +87,20 @@ export function rng(seed: number) {
  */
 type TexEntry = { tex: THREE.Texture | null; users: number; keep: boolean; waiters: Set<(t: THREE.Texture) => void>; loading: boolean };
 const texCache = new Map<string, TexEntry>();
+/** 지금 불러오는 중인 작품 텍스처 수 — 영상으로 뽑을 때 다 올 때까지 기다린다 */
+let loadingCount = 0;
+const idleWaiters = new Set<() => void>();
+function loadingDone() {
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (loadingCount === 0) {
+    idleWaiters.forEach((w) => w());
+    idleWaiters.clear();
+  }
+}
+/** 작품 텍스처를 다 불러올 때까지 (이미 다 왔으면 바로) */
+export function texturesIdle(): Promise<void> {
+  return loadingCount === 0 ? Promise.resolve() : new Promise((r) => idleWaiters.add(r));
+}
 const idle: string[] = [];
 const IDLE_KEEP = 12;
 const loader = new THREE.TextureLoader();
@@ -82,9 +120,10 @@ function borrow(src: string, keep: boolean, ready: (t: THREE.Texture) => void) {
     e.waiters.add(ready);
     if (!e.loading) {
       e.loading = true;
+      loadingCount++;
       const entry = e;
       loader.load(
-        src,
+        asset(src),
         (t) => {
           t.colorSpace = THREE.SRGBColorSpace;
           t.anisotropy = 8;
@@ -92,10 +131,12 @@ function borrow(src: string, keep: boolean, ready: (t: THREE.Texture) => void) {
           entry.loading = false;
           entry.waiters.forEach((w) => w(t));
           entry.waiters.clear();
+          loadingDone();
         },
         undefined,
         () => {
           entry.loading = false;
+          loadingDone();
         }
       );
     }

@@ -16,7 +16,8 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "video:studio": "npm run exhibition && remotion studio",
-    "video:render": "npm run exhibition && remotion render HangulDay out/hangul-day.mp4 && remotion render HangulDayVertical out/hangul-day-vertical.mp4"
+    "video:render": "npm run exhibition && remotion render HangulDayFull out/hangul-day-full.mp4 && remotion render HangulDayFullVertical out/hangul-day-full-vertical.mp4",
+    "video:complete": "npm run exhibition && remotion render HangulDayComplete out/hangul-day-complete.mp4 --muted --crf=22"
   },
   "dependencies": {
     "@react-three/drei": "^10.0.6",
@@ -41,6 +42,7 @@
     "@prisma/client": "^6.5.0",
     "@remotion/cli": "4.0.531",
     "@remotion/google-fonts": "4.0.531",
+    "@remotion/three": "4.0.531",
     "@types/howler": "^2.2.12",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",

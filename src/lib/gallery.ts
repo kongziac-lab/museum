@@ -61,6 +61,8 @@ export const AUTO = {
   ease: 1.1,
   /** 한 바퀴 끝나 기념 화면이 걷힌 뒤 정문 화면을 보여 주는 시간 (ms) — 그다음 다시 자동 관람 */
   introHold: 5000,
+  /** 마지막 작품 뒤 마무리: 하늘로 올라가 작품 원을 내려다보며 전시 제목 (영상의 끝과 같게) */
+  finaleMs: 8500,
   /** ?auto 로 연 전시(행사장 화면)에서 아무도 만지지 않으면 이만큼 뒤에 다시 자동 관람 (ms) */
   kioskIdle: 45000,
 } as const;
@@ -405,6 +407,8 @@ interface GalleryState {
   overview: boolean;
   /** 작품 가까이 보기 (자동 관람이 작품마다 다가가 화면을 채운다) */
   closeUp: boolean;
+  /** 자동 관람 마무리 중 (하늘에서 내려다보며 전시 제목) */
+  finale: boolean;
 
   /** 카메라를 걷지 않고 목표 자리로 바로 옮긴 횟수 (CameraRig 가 바뀌면 순간 이동) */
   cut: number;
@@ -464,6 +468,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
 
   overview: false,
   closeUp: false,
+  finale: false,
 
   cut: 0,
   splashRun: 0,

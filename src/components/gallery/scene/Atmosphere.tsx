@@ -5,7 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Environment, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import type { ExhibitionBackground } from "@/lib/types";
-import { ENV_ROTATION, HAZE, SCENERY, sunDirection, type Quality } from "./common";
+import { ENV_ROTATION, HAZE, SCENERY, asset, sunDirection, type Quality } from "./common";
 
 /**
  * 하늘과 빛: 실사 360° 공원 사진(HDRI)을 배경과 주변광으로 쓰고,
@@ -21,7 +21,7 @@ export function Atmosphere({
   radius: number;
   panorama: ExhibitionBackground | null;
 }) {
-  const bg = useTexture(panorama?.src ?? SCENERY.bg[quality]);
+  const bg = useTexture(panorama?.src ? asset(panorama.src) : SCENERY.bg[quality]);
   const bgRotation = panorama ? 0 : ENV_ROTATION;
 
   return (

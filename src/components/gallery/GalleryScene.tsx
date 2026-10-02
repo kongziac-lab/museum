@@ -178,10 +178,15 @@ function SceneryReady() {
 
 /* ───────────────────────── 씬 ───────────────────────── */
 
-export function GalleryScene({ layout, quality }: { layout: GalleryLayout; quality: Quality }) {
+/**
+ * filmT 를 주면(Remotion 으로 영상을 뽑을 때) 관람객 카메라(CameraRig) 대신 그 위치 t 를 쓴다 —
+ * 카메라는 부르는 쪽(src/remotion/GateWalk.tsx)이 프레임마다 옮긴다.
+ */
+export function GalleryScene({ layout, quality, filmT }: { layout: GalleryLayout; quality: Quality; filmT?: number }) {
   const background = useGallery((s) => s.background);
   const site = useMemo(() => sitePlan(layout), [layout]);
-  const current = useGallery((s) => s.current);
+  const live = useGallery((s) => s.current);
+  const current = filmT ?? live;
   const n = layout.stops.length;
   const nearest = stopIndex(current, n);
   const settled = offStop(current, layout) < 0.2;
@@ -204,7 +209,7 @@ export function GalleryScene({ layout, quality }: { layout: GalleryLayout; quali
         <SceneryReady />
       </Suspense>
 
-      <CameraRig layout={layout} />
+      {filmT === undefined && <CameraRig layout={layout} />}
       {quality === "high" && (
         <Suspense fallback={null}>
           <Effects />

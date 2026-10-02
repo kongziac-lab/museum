@@ -642,6 +642,19 @@ function Finale({ p }: { p: HangulDayProps }) {
   );
 }
 
+/** 처음 5초: 로딩 화면처럼 580돌 · 100돌 두 판 (전체 한 편 영상의 맨 앞) */
+export const OPENER = 5 * FPS;
+export function Opener(p: HangulDayProps) {
+  ensureFonts();
+  const f = useCurrentFrame();
+  return (
+    <AbsoluteFill style={{ background: NAVY }}>
+      <Finale p={p} />
+      <AbsoluteFill style={{ background: NAVY, opacity: rise(f, OPENER - 14, 14, IN_OUT) }} />
+    </AbsoluteFill>
+  );
+}
+
 /* ───────────────────────── 전체 ───────────────────────── */
 
 const SCENES = {

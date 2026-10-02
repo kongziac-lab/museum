@@ -1,3 +1,4 @@
+import "./assetBase";
 import { registerRoot } from "remotion";
 import { RemotionRoot } from "./Root";
 
