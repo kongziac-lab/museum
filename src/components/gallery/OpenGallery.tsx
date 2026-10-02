@@ -189,7 +189,7 @@ function useAutoTour() {
       if (show || kiosk) return;
       if (replay) {
         replay = false;
-        useGallery.setState({ autoReplay: false });
+        useGallery.setState({ autoReplay: false, autoStartAt: null });
       }
       // 마무리 중에 만지면 멈추고 하늘에서 보기로 넘겨준다 (작품을 누르면 내려간다)
       if (finaleUntil) {
@@ -201,7 +201,7 @@ function useAutoTour() {
     let lastShow = useGallery.getState().showRequest;
     /** 영상 → 정문 화면 → 자동 관람. 관람 중이었으면 영상이 덮은 뒤 카메라를 정문으로 옮긴다 */
     const beginReplay = (now: number, fromTour: boolean) => {
-      useGallery.setState({ autoplay: false, autoReplay: true, autoDwell: null, closeUp: false, overview: false, finale: false, started: false, film: true });
+      useGallery.setState({ autoplay: false, autoReplay: true, autoStartAt: null, autoDwell: null, closeUp: false, overview: false, finale: false, started: false, film: true });
       cutAt = fromTour ? now + 1000 : 0;
       replay = true;
       introSince = 0;
@@ -237,10 +237,13 @@ function useAutoTour() {
         jumpTo(-1);
       }
       if (replay && !cutAt && !s.splashUp && !s.film) {
-        if (!introSince) introSince = now;
+        if (!introSince) {
+          introSince = now;
+          useGallery.setState({ autoStartAt: now + AUTO.introHold });
+        }
         if (now - introSince >= AUTO.introHold) {
           replay = false;
-          useGallery.setState({ autoReplay: false });
+          useGallery.setState({ autoReplay: false, autoStartAt: null });
           if (s.detail === null && !s.listOpen) {
             playAuto();
             return;
@@ -552,6 +555,65 @@ const btn =
 
 /* ───────────────────────── 오버레이 ───────────────────────── */
 
+/** 정문 화면에서 자동 관람이 시작되기까지 5 · 4 · 3 · 2 · 1 — 숫자 둘레의 원이 줄어든다 */
+function Countdown() {
+  const startAt = useGallery((s) => s.autoStartAt);
+  const count = useGallery((s) => s.arts.length);
+  const [left, setLeft] = useState(0);
+  useEffect(() => {
+    if (startAt === null) return;
+    let raf = 0;
+    const loop = () => {
+      setLeft(Math.max(0, startAt - performance.now()));
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+    return () => cancelAnimationFrame(raf);
+  }, [startAt]);
+  const total = AUTO.introHold;
+  const sec = Math.ceil(left / 1000);
+  const R = 30;
+  const C = 2 * Math.PI * R;
+  return (
+    <AnimatePresence>
+      {startAt !== null && sec > 0 && (
+        <motion.div
+          key="countdown"
+          className="mx-auto mt-8 flex w-max max-w-full items-center gap-4 rounded-full bg-black/35 py-2.5 pl-2.5 pr-7 text-left ring-1 ring-white/25 backdrop-blur-md"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0, transition: { duration: 0.5 } }}
+          exit={{ opacity: 0, scale: 0.92, transition: { duration: 0.35 } }}
+          role="timer"
+          aria-live="polite"
+          aria-label={`${sec}초 뒤 자동 관람으로 넘어갑니다`}
+        >
+          <div className="relative grid h-16 w-16 shrink-0 place-items-center md:h-20 md:w-20">
+            <svg viewBox="0 0 72 72" className="absolute inset-0 h-full w-full -rotate-90" aria-hidden>
+              <circle cx="36" cy="36" r={R} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" strokeWidth="4" />
+              <circle cx="36" cy="36" r={R} fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - left / total)} />
+            </svg>
+            <AnimatePresence mode="popLayout">
+              <motion.span
+                key={sec}
+                className="font-display text-3xl font-black md:text-4xl"
+                initial={{ opacity: 0, scale: 1.5 }}
+                animate={{ opacity: 1, scale: 1, transition: { duration: 0.35, ease: [0.2, 0.8, 0.2, 1] } }}
+                exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.25 } }}
+              >
+                {sec}
+              </motion.span>
+            </AnimatePresence>
+          </div>
+          <div>
+            <p className="text-lg font-bold leading-snug md:text-2xl">▶ 자동 관람으로 넘어갑니다</p>
+            <p className="mt-0.5 text-sm text-white/85 md:text-base">정문에서부터 작품 {count}점을 차례로 둘러봅니다</p>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function Intro() {
   const started = useGallery((s) => s.started);
   const loaded = useGallery((s) => s.loaded);
@@ -560,6 +622,7 @@ function Intro() {
   const count = useGallery((s) => s.arts.length);
   const start = useGallery((s) => s.start);
   const toggleList = useGallery((s) => s.toggleList);
+  const autoStartAt = useGallery((s) => s.autoStartAt);
   const { progress } = useProgress();
   const ready = loaded && sceneryReady;
   return (
@@ -607,7 +670,7 @@ function Intro() {
                 ▶ 한글날 영상
               </button>
             </div>
-            <p className="mt-6 text-sm text-white/80">스크롤하거나 화면을 밀어서 한 작품씩 걸어가며 볼 수 있어요</p>
+            {autoStartAt === null ? <p className="mt-6 text-sm text-white/80">스크롤하거나 화면을 밀어서 한 작품씩 걸어가며 볼 수 있어요</p> : <Countdown />}
           </div>
           {info.배경출처 && (
             <p className="absolute bottom-3 left-1/2 w-max max-w-[92vw] -translate-x-1/2 rounded-xl bg-black/35 px-3 py-1 text-center text-[11px] text-white/90 backdrop-blur-sm">

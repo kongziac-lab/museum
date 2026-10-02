@@ -431,6 +431,8 @@ interface GalleryState {
   autoplay: boolean;
   /** 자동 관람이 한 바퀴 끝나 기념 화면 → 정문 화면을 거쳐 다시 시작하려고 기다리는 중 */
   autoReplay: boolean;
+  /** 정문 화면에서 자동 관람이 시작될 때 (performance.now) — 카운트다운용. 기다리는 중이 아니면 null */
+  autoStartAt: number | null;
   /** 지금 작품 앞에 머물기 시작한 때(performance.now)와 머무는 시간 — 진행 막대용. 걷는 중이면 null */
   autoDwell: { at: number; ms: number } | null;
 }
@@ -483,6 +485,7 @@ export const useGallery = create<GalleryState>((set, get) => ({
 
   autoplay: false,
   autoReplay: false,
+  autoStartAt: null,
   autoDwell: null,
 }));
 
@@ -515,7 +518,7 @@ export function playAuto() {
   } else {
     s.setTarget(Math.round(s.target));
   }
-  useGallery.setState({ autoplay: true, autoReplay: false, autoDwell: null, overview: false });
+  useGallery.setState({ autoplay: true, autoReplay: false, autoStartAt: null, autoDwell: null, overview: false });
 }
 
 /** 카메라를 걷지 않고 t 자리로 바로 옮긴다 (화면이 가려져 있을 때만 쓴다) */
