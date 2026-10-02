@@ -65,6 +65,10 @@ export const AUTO = {
   finaleMs: 8500,
   /** ?auto 로 연 전시(행사장 화면)에서 아무도 만지지 않으면 이만큼 뒤에 다시 자동 관람 (ms) */
   kioskIdle: 45000,
+  /** '시작'을 누른 뒤(동영상처럼 끝없이 도는 중)에는 누가 만져 멈춰도 이만큼 손대지 않으면 이어 간다 (ms) */
+  showIdle: 30000,
+  /** 영상이 이보다 오래 떠 있으면(브라우저가 재생을 막아 멈춘 경우) 걷고 다음으로 (ms) — 영상 60초 + 불러오는 여유 */
+  filmMax: 75000,
 } as const;
 
 export function dwellFor(art: ArtworkSource | undefined) {

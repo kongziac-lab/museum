@@ -165,9 +165,12 @@ function useWalkInput(ref: React.RefObject<HTMLDivElement | null>) {
  * 마지막 작품까지 보면 완전히 처음으로 — 한글날 도입 영상(1분, 끝이 580돌·100돌 화면)이 위에서 내려와 덮고,
  * 그사이 카메라는 정문으로 옮기고, 영상이 끝나면 정문 화면을 AUTO.introHold 동안 보여 준 뒤 다시 걸어 들어간다.
  * 이렇게 끝없이 되풀이한다. 행사장 화면(?auto)은 처음 불러온 뒤에도 영상부터 튼다.
- * 기다리는 동안 누가 화면을 만지면 되풀이를 멈추고 그 사람에게 맡긴다.
+ * 기념 화면의 '시작'을 한 번 누른 뒤(그리고 행사장 화면)에는 동영상처럼 끝없이 돈다: 영상·정문 화면·마무리 중에 화면을 만져도
+ * 끊지 않고, 관람 중에 누가 만져 멈추면 그 사람에게 맡겼다가 AUTO.showIdle 동안 손대지 않으면 그 자리에서 이어 간다.
+ * '바로 둘러보기'로 들어온 사람은 영상을 기다리는 동안 화면을 만지면 되풀이를 멈추고 그 사람에게 맡긴다.
  * 크게 보기·작품 목록이 열려 있는 동안에는 쉬고, 닫히면 그 작품에서 다시 머문다.
  * 주소에 ?auto 를 붙이면(행사장 화면) 불러오자마자 시작하고, 아무도 만지지 않은 채 AUTO.kioskIdle 이 지나면 다시 시작한다.
+ * 영상이 AUTO.filmMax 보다 오래 떠 있으면(브라우저가 재생을 막은 경우) 걷어 내고 다음으로 넘어가 멈춰 서지 않게 한다.
  */
 function useAutoTour() {
   useEffect(() => {
@@ -179,8 +182,11 @@ function useAutoTour() {
     let replay = false; // 기념 화면 → 정문 화면을 거쳐 다시 자동 관람하려고 기다리는 중
     let introSince = 0; // 기념 화면이 다 걷힌 때 (정문 화면을 보여 주기 시작한 때)
     let finaleUntil = 0; // 마무리(하늘에서 전시 제목)가 끝나는 때
+    let show = false; // '시작'을 누른 뒤 — 동영상처럼 끝없이 (만져도 끊지 않고, 멈춰도 다시 이어 간다)
+    let filmSince = 0;
     const touched = () => {
       lastInput = performance.now();
+      if (show || kiosk) return;
       if (replay) {
         replay = false;
         useGallery.setState({ autoReplay: false });
@@ -200,16 +206,32 @@ function useAutoTour() {
       replay = true;
       introSince = 0;
     };
+    /** 멈춘 자동 관람을 이어 간다 (크게 보기·목록은 닫고, 기념 화면으로 돌아가 있으면 영상부터) */
+    const resume = (s: ReturnType<typeof useGallery.getState>) => {
+      if (s.detail !== null) closeViewer();
+      if (s.listOpen) s.toggleList(false);
+      if (!s.started) beginReplay(performance.now(), false);
+      else playAuto();
+    };
     const tick = () => {
       const s = useGallery.getState();
       const now = performance.now();
       // 기념 화면에서 '시작'을 눌렀다 → 영상부터 끝없이
       if (s.showRequest !== lastShow) {
         lastShow = s.showRequest;
+        show = true;
         if (bgmWanted()) bgm.start();
         beginReplay(now, false);
         return;
       }
+      // 영상이 재생되지 못하고 멈춰 있으면 걷어 낸다 (끝나야 다음으로 넘어가므로)
+      if (s.film) {
+        if (!filmSince) filmSince = now;
+        else if (now - filmSince > AUTO.filmMax) {
+          filmSince = 0;
+          useGallery.setState({ film: false });
+        }
+      } else filmSince = 0;
       if (cutAt && now >= cutAt) {
         cutAt = 0;
         jumpTo(-1);
@@ -234,11 +256,16 @@ function useAutoTour() {
           firstDone = true;
           // 행사장 화면: 누르기 전에는 브라우저가 소리를 막지만, 소리를 허락한 키오스크 설정이면 바로 난다
           if (bgmWanted()) bgm.start();
-          if (s.detail !== null) closeViewer();
-          if (s.listOpen) s.toggleList(false);
           // 처음에는 영상부터, 누가 만지다 떠난 뒤에는 바로 관람
           if (firstRun) beginReplay(now, false);
-          else playAuto();
+          else resume(s);
+          return;
+        }
+      } else if (show && s.loaded && s.arts.length > 0) {
+        // '시작' 뒤: 누가 만져 멈춘 채 한동안 그대로면 그 자리에서 이어 간다
+        if (!s.autoplay && !replay && !finaleUntil && !s.film && now - lastInput > AUTO.showIdle) {
+          lastInput = now;
+          resume(s);
           return;
         }
       }
