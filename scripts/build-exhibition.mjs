@@ -423,14 +423,26 @@ async function main() {
     else warn(`${norm(bgFile)}은 360° 파노라마(가로:세로 = 2:1)가 아니라서 쓰지 않습니다. 기본 공원 배경을 씁니다.`);
   }
 
-  // 한글날 도입 영상 음악 (선택): public/audio/film.mp3 — 영상 길이(60초)에 맞춘 곡
-  const music = existsSync(join(ROOT, "public", "audio", "film.mp3")) ? { film: "/audio/film.mp3" } : null;
+  // 음악 (선택): public/audio/film.mp3 = 한글날 도입 영상(60초에 맞춘 곡),
+  //              public/audio/tour/*.mp3 = 그 밖의 배경음 (이름순으로 돌아가며, 없으면 합성 국악)
+  const audioDir = join(ROOT, "public", "audio");
+  const tourDir = join(audioDir, "tour");
+  const tour = existsSync(tourDir)
+    ? readdirSync(tourDir)
+        .filter((f) => /\.(mp3|m4a|ogg)$/i.test(f))
+        .sort()
+        .map((f) => `/audio/tour/${encodeURIComponent(f)}`)
+    : [];
+  const music = {
+    ...(existsSync(join(audioDir, "film.mp3")) ? { film: "/audio/film.mp3" } : {}),
+    ...(tour.length ? { tour } : {}),
+  };
 
   const payload = {
     generatedAt: new Date().toISOString(),
     info,
     background,
-    music,
+    music: Object.keys(music).length ? music : null,
     mode,
     count: artworks.length,
     artworks,

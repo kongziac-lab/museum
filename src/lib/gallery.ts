@@ -421,7 +421,7 @@ interface GalleryState {
   /** '시작'을 누른 횟수 — 늘면 영상 → 정문 → 자동 관람을 처음부터 이어 튼다 (useAutoTour 가 본다) */
   showRequest: number;
   /** 영상 음악 등 (public/audio, 빌드 스크립트가 알려 준다) */
-  music: { film?: string } | null;
+  music: { film?: string; tour?: string[] } | null;
 
   /** 자동 관람 중인지 */
   autoplay: boolean;

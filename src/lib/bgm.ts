@@ -12,7 +12,11 @@
  * - 흐름: 가야금 홀로 → 대금과 가야금 → 쉼(풍경·낮은 줄만)을 가중치를 두고 번갈아. 가락은 다섯 음 위를 걸어 다니다
  *   황이나 임으로 맺는다. 가끔 꾸밈음(시김새).
  *
+ * 음원 목록(setPlaylist — public/audio/tour/*.mp3)이 있으면 합성 대신 그 곡들을 차례로, 끝과 처음을 겹쳐 이어
+ * 끝없이 돈다. 받지 못하면 합성으로 돌아간다.
+ *
  * 브라우저는 사람이 한 번 누르기 전에는 소리를 못 내게 하므로, 첫 누름에서 start() 를 부른다.
+ * 소리가 필요 없는 동안(꺼짐·영상이 나오는 동안·탭이 가려짐)은 오디오를 멈춰 두므로 곡은 그 자리에서 기다린다.
  */
 
 const HZ = (semitonesFromEb4: number) => 311.127 * Math.pow(2, semitonesFromEb4 / 12);
@@ -29,6 +33,9 @@ const BEAT = 0.46; // 한 박 (초) — 느린 진양조·중모리 사이 느�
 const LOOKAHEAD = 1.6; // 몇 초 앞까지 미리 예약하는지
 
 type Section = "solo" | "duet" | "rest";
+
+/** 곡과 곡을 겹치는 길이 (초) */
+const XFADE = 3;
 
 class Bgm {
   private ctx: AudioContext | null = null;
@@ -48,6 +55,16 @@ class Bgm {
   private volume = 0.55;
   private ducked = false;
   private hushed = false;
+  private hidden = false;
+  private sleepTimer: number | null = null;
+  /* 음원 목록 */
+  private music!: GainNode;
+  private tracks: string[] = [];
+  private trackAt = 0; // 다음에 틀 곡 번호
+  private trackFails = 0;
+  private decoded = new Map<string, Promise<AudioBuffer | null>>();
+  private voice: { gain: GainNode; ends: number } | null = null;
+  private queuing = false;
   playing = false;
 
   private rnd() {
@@ -63,6 +80,7 @@ class Bgm {
     if (typeof window === "undefined") return;
     if (!this.ctx) this.build();
     const ctx = this.ctx!;
+    // 누르는 순간에 한 번 깨워야 브라우저가 소리를 허락한다 (영상 중이면 곧 다시 쉰다)
     void ctx.resume();
     if (this.playing) return;
     this.playing = true;
@@ -71,8 +89,23 @@ class Bgm {
     this.master.gain.setValueAtTime(this.master.gain.value, t);
     this.master.gain.linearRampToValueAtTime(this.volume, t + 3);
     this.next = Math.max(this.next, t + 0.3);
-    if (this.timer === null) this.timer = window.setInterval(() => this.schedule(), 250);
-    this.schedule();
+    if (this.timer === null) this.timer = window.setInterval(() => this.tick(), 250);
+    this.tick();
+    if (!this.wantRun()) this.run(false, 1300);
+  }
+
+  /** 들려줄 곡들 (주소 목록). 비우면 합성 국악을 낸다. */
+  setPlaylist(urls: string[]) {
+    if (urls.join("|") === this.tracks.join("|")) return;
+    this.tracks = urls.slice();
+    this.trackAt = 0;
+    this.trackFails = 0;
+    if (this.playing) this.tick();
+  }
+
+  private tick() {
+    if (this.tracks.length) this.queueTrack();
+    else this.schedule();
   }
 
   /** 서서히 줄이고 멈춘다 */
@@ -85,10 +118,7 @@ class Bgm {
     this.master.gain.linearRampToValueAtTime(0, t + 1.2);
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
-    const ctx = this.ctx;
-    window.setTimeout(() => {
-      if (!this.playing) void ctx.suspend();
-    }, 1400);
+    this.run(false, 1400);
   }
 
   /** 크게 보기 등에서 소리를 줄인다 */
@@ -102,7 +132,9 @@ class Bgm {
   hush(on: boolean) {
     if (this.hushed === on) return;
     this.hushed = on;
+    if (!on && this.wantRun()) this.run(true);
     this.level(on ? 1.2 : 2.5);
+    if (on) this.run(false, 1300);
   }
 
   private level(sec: number) {
@@ -116,9 +148,86 @@ class Bgm {
 
   /** 탭이 가려지면 잠시 쉰다 */
   pause(hidden: boolean) {
+    this.hidden = hidden;
     if (!this.ctx || !this.playing) return;
-    if (hidden) void this.ctx.suspend();
-    else void this.ctx.resume();
+    this.run(this.wantRun());
+  }
+
+  private wantRun() {
+    return this.playing && !this.hidden && !this.hushed;
+  }
+
+  /** 오디오를 돌리거나 멈춘다 (멈출 때는 소리가 다 줄어든 뒤에) */
+  private run(on: boolean, afterMs = 0) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (this.sleepTimer !== null) window.clearTimeout(this.sleepTimer);
+    this.sleepTimer = null;
+    if (on) {
+      void ctx.resume();
+      return;
+    }
+    this.sleepTimer = window.setTimeout(() => {
+      this.sleepTimer = null;
+      if (!this.wantRun()) void ctx.suspend();
+    }, afterMs);
+  }
+
+  /* ───────────── 음원 목록 ───────────── */
+
+  /** 곡을 받아 풀어 둔다 (지금 곡과 다음 곡만 들고 있는다) */
+  private decode(url: string) {
+    let p = this.decoded.get(url);
+    if (!p) {
+      const ctx = this.ctx!;
+      p = fetch(url)
+        .then((r) => {
+          if (!r.ok) throw new Error(`${r.status}`);
+          return r.arrayBuffer();
+        })
+        .then((b) => ctx.decodeAudioData(b))
+        .catch(() => null);
+      this.decoded.set(url, p);
+    }
+    return p;
+  }
+
+  /** 지금 곡이 끝나 가면 다음 곡을 겹쳐 건다 */
+  private queueTrack() {
+    const ctx = this.ctx;
+    if (!ctx || this.queuing || !this.tracks.length) return;
+    if (this.voice && ctx.currentTime < this.voice.ends - XFADE - 6) return;
+    const n = this.tracks.length;
+    const url = this.tracks[this.trackAt % n];
+    this.queuing = true;
+    void this.decode(url).then((buf) => {
+      this.queuing = false;
+      if (!this.ctx || this.tracks[this.trackAt % n] !== url) return;
+      this.trackAt = (this.trackAt + 1) % n;
+      this.decoded.delete(url);
+      if (!buf) {
+        // 하나도 못 받으면 합성으로
+        if (++this.trackFails >= n) this.tracks = [];
+        return;
+      }
+      this.trackFails = 0;
+      const now = ctx.currentTime;
+      const at = Math.max(now + 0.05, this.voice ? this.voice.ends - XFADE : 0);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(1, at + (this.voice ? XFADE : 0.5));
+      const ends = at + buf.duration;
+      g.gain.setValueAtTime(1, ends - XFADE);
+      g.gain.linearRampToValueAtTime(0, ends);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(g).connect(this.music);
+      src.onended = () => g.disconnect();
+      src.start(at);
+      this.voice = { gain: g, ends };
+      // 다음 곡은 미리 받아 둔다
+      void this.decode(this.tracks[this.trackAt % n]);
+    });
   }
 
   /* ───────────── 판 짜기 ───────────── */
@@ -143,6 +252,10 @@ class Bgm {
     this.dry.connect(comp);
     this.wet.connect(verb).connect(comp);
     comp.connect(this.duckGain).connect(this.master).connect(ctx.destination);
+    // 음원은 이미 고르게 다듬어 두었으므로 압축기를 거치지 않는다
+    this.music = ctx.createGain();
+    this.music.gain.value = 1.25;
+    this.music.connect(this.duckGain);
     // 숨소리·풍경에 쓰는 흰 잡음 2초
     const n = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = n.getChannelData(0);

@@ -25,9 +25,10 @@ function useExhibition() {
   useEffect(() => {
     fetch("/exhibition.json", { cache: "no-store" })
       .then((r) => r.json())
-      .then((j: { artworks: ArtworkSource[]; info?: ExhibitionInfo; background?: ExhibitionBackground | null; music?: { film?: string } | null }) => {
+      .then((j: { artworks: ArtworkSource[]; info?: ExhibitionInfo; background?: ExhibitionBackground | null; music?: { film?: string; tour?: string[] } | null }) => {
         setData(j.artworks ?? [], j.info ?? {}, j.background ?? null);
         useGallery.setState({ music: j.music ?? null });
+        bgm.setPlaylist(j.music?.tour ?? []);
       })
       .catch(() => setData([], {}, null));
   }, [setData]);
