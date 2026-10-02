@@ -39,6 +39,22 @@ function placeTrees(plan: SitePlan, quality: Quality) {
   plan.gratedTrees.forEach(([x, z], i) => put(i % 2 ? "zelkova_a" : "zelkova_b", x, z, 0.95 + r() * 0.15, 4));
   // 광장 남쪽 모서리 은행나무 (사진)
   for (const s of [-1, 1]) put("aspen_a", s * (plan.plazaX + 4), plan.plazaS - 6, 0.95);
+  // 광장 북동쪽 숲 (도서관 동쪽 ~ 전산원 뒤): 이 쪽을 보는 작품들 뒤로 빈 잔디와 먼 산 대신 빽빽한 나무가 서게.
+  // 수관이 넓고 가벼운 느티나무를 겹쳐 심고, 광장에 가까운 두 줄은 나무 사이 밑을 낮은 소나무로 채운다
+  const step = quality === "high" ? 10 : 13;
+  const x0 = plan.plazaX + 5;
+  const z0 = -14;
+  for (let gx = x0; gx < plan.plazaX + 70; gx += step) {
+    for (let gz = z0; gz > plan.plazaN - 40; gz -= step) {
+      const x = gx + (r() - 0.5) * step * 0.5;
+      const z = gz + (r() - 0.5) * step * 0.5;
+      if (!blockedBySite(plan, x, z, 2)) put(r() < 0.5 ? "zelkova_a" : "zelkova_b", x, z, 1.1 + r() * 0.3, step * 0.55);
+      const front = gx < x0 + step * 2 || gz > z0 - step * 2;
+      const ux = gx + step / 2;
+      const uz = gz - step / 2;
+      if (front && !blockedBySite(plan, ux, uz, 2)) put("pine_b", ux, uz, 1.2 + r() * 0.35, 3);
+    }
+  }
   // 대로 가로수
   for (let z = plan.plazaS + 16; z < plan.roadS; z += 10) {
     for (const s of [-1, 1]) put(z % 20 < 10 ? "oak_b" : "ash_a", s * (plan.roadX + 2.2), z, 0.95 + r() * 0.1, 4);

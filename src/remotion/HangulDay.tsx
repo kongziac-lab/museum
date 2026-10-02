@@ -197,7 +197,8 @@ function Seal({ frame, start, size }: { frame: number; start: number; size: numb
         boxShadow: "inset 0 0 0 3px rgba(255,255,255,0.18)",
       }}
     >
-      {["正", "訓", "音", "民"].map((c) => (
+      {/* 한글로, 왼쪽에서 오른쪽으로 읽히게: 훈민 / 정음 */}
+      {["훈", "민", "정", "음"].map((c) => (
         <span key={c}>{c}</span>
       ))}
     </div>
@@ -313,7 +314,7 @@ function Letters({ dur }: { dur: number }) {
       {f >= 296 && (
         <AbsoluteFill style={{ ...center, flexDirection: "column", gap: 20 * u }}>
           <div style={{ fontFamily: SERIF, fontWeight: 900, fontSize: 124 * u, color: PAPER, opacity: rise(f, 304, 22), transform: `translateY(${(1 - rise(f, 304, 22)) * 24 * u}px)` }}>스물여덟 글자</div>
-          <Label style={{ fontSize: 30 * u, color: GOLD, opacity: rise(f, 316, 20) }}>1446 · 訓民正音</Label>
+          <Label style={{ fontSize: 30 * u, color: GOLD, opacity: rise(f, 316, 20) }}>1446 · 훈민정음</Label>
         </AbsoluteFill>
       )}
     </AbsoluteFill>
