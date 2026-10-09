@@ -502,6 +502,20 @@ function AwardChip({ award, small }: { award?: string; small?: boolean }) {
   );
 }
 
+/** 작품 띠 썸네일 구석의 작은 수상 별 (부문 색) */
+function AwardStar({ award }: { award?: string }) {
+  if (!award) return null;
+  return (
+    <span
+      aria-hidden
+      className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full text-[9px] leading-none text-white shadow ring-1 ring-white/90"
+      style={{ background: awardColor(award) }}
+    >
+      ★
+    </span>
+  );
+}
+
 /**
  * 긴 이름도 다 보이도록 칸 폭에 맞춰 글자를 줄인다 (부모의 글자 크기에서 최소 min배까지).
  * min배로도 한 줄에 안 들어가는 아주 긴 이름은 띄어쓰기에서 두 줄로 나누고, 두 줄에 들어가는 가장 큰 크기로.
@@ -775,6 +789,7 @@ function Filmstrip() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={a.thumb ?? a.src} alt={a.name} loading="lazy" className="h-full w-full object-cover" />
           <span className="absolute inset-x-0 bottom-0 h-1" style={{ background: colorOf(a) }} />
+          <AwardStar award={a.award} />
         </button>
       ))}
     </div>
@@ -937,9 +952,14 @@ function ListOverlay() {
                       }}
                       className="group overflow-hidden rounded-xl bg-white text-left shadow-sm ring-1 ring-black/5 transition hover:shadow-md"
                     >
-                      <div className="aspect-[4/3] overflow-hidden bg-stone-100">
+                      <div className="relative aspect-[4/3] overflow-hidden bg-stone-100">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={a.thumb ?? a.src} alt={a.name} loading="lazy" className="h-full w-full object-contain transition group-hover:scale-[1.03]" />
+                        {a.award && (
+                          <span className="absolute right-2 top-2">
+                            <AwardChip award={a.award} small />
+                          </span>
+                        )}
                       </div>
                       <div className="p-3">
                         <p className="font-bold text-stone-800">

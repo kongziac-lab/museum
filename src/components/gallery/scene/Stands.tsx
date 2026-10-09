@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { WALK, colorOf, goTo, offStop, openViewer, stopIndex, useGallery, type GalleryLayout, type Stop } from "@/lib/gallery";
 import { FONT, SCENERY, fitText, useCanvasTexture, useLazyTexture } from "./common";
 import { useTexture } from "@react-three/drei";
+import { awardColor } from "@/lib/config";
 import type { SitePlan } from "./sitePlan";
 import { ArtFrame, FrameLegs, artZ, frameOuter, pickFrameStyle, SPECS } from "./Frames";
 
@@ -103,6 +104,8 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
             <meshStandardMaterial key="blank" color="#d8d2c8" roughness={0.9} />
           )}
         </mesh>
+        {/* 수상작: 액자 오른쪽 위 모서리에 다는 메달 */}
+        {art.award && <AwardRosette award={art.award} x={boardW / 2 - 0.07} y={cy + boardH / 2 - 0.07} hero={Boolean(art.hero)} />}
         {/* 지금 보고 있는 작품: 부문 색 띠 */}
         <mesh position={[0, cy - h / 2 - pad / 2, z]}>
           <planeGeometry args={[active ? w : w * 0.3, 0.018]} />
@@ -127,6 +130,139 @@ export function ArtStand({ stop, active, near }: { stop: Stop; active: boolean; 
         </group>
       </group>
     </group>
+  );
+}
+
+/* ───────────────────────── 수상 메달 ───────────────────────── */
+
+/** 부문별 메달 가운데 금속 빛 (밝은 곳 → 어두운 곳) 과 글자 색 */
+function medalTone(award: string) {
+  if (award.includes("대상")) return { metal: ["#fff4b8", "#e6c25a", "#a77f1c"], ink: "#4d3500" };
+  if (award.includes("최우수")) return { metal: ["#ffffff", "#c9d0d8", "#7d8793"], ink: "#2e3640" };
+  if (award.includes("우수")) return { metal: ["#ffe0c2", "#c98a58", "#7a4824"], ink: "#3e2210" };
+  return { metal: ["#fbf8ee", "#e4dcc8", "#b7ab90"], ink: "#2f4f44" };
+}
+
+/** 색을 어둡게(k < 1)·밝게(k > 1) */
+function shade(hex: string, k: number) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (v: number) => Math.round(THREE.MathUtils.clamp(k > 1 ? v + (255 - v) * (k - 1) : v * k, 0, 255));
+  return `rgb(${ch(n >> 16)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
+}
+
+/**
+ * 수상작 액자 모서리에 다는 리본 메달: 주름 잡힌 리본 꽃 + 금·은·동 원판에 부문 이름, 아래로 늘어진 두 갈래 리본.
+ * 대상은 더 크게. (x, y) 는 메달 가운데 자리.
+ */
+function AwardRosette({ award, x, y, hero }: { award: string; x: number; y: number; hero: boolean }) {
+  const color = awardColor(award);
+  const TW = 512;
+  const TH = 768;
+  const tex = useCanvasTexture(
+    TW,
+    TH,
+    (g) => {
+      const cx = TW / 2;
+      const cy = 250;
+      const dark = shade(color, 0.62);
+      const light = shade(color, 1.35);
+      // 늘어진 리본 두 갈래 (끝은 V 자로 오림)
+      for (const s of [-1, 1]) {
+        g.save();
+        g.translate(cx, cy + 40);
+        g.rotate(s * 0.3);
+        const w = 92;
+        const L = 450;
+        g.beginPath();
+        g.moveTo(-w / 2, 0);
+        g.lineTo(w / 2, 0);
+        g.lineTo(w / 2, L);
+        g.lineTo(0, L - 46);
+        g.lineTo(-w / 2, L);
+        g.closePath();
+        g.fillStyle = s < 0 ? color : shade(color, 0.85);
+        g.fill();
+        g.fillStyle = light;
+        g.fillRect(-w / 2 + 14, 0, 9, L - 24);
+        g.fillRect(w / 2 - 23, 0, 9, L - 24);
+        g.restore();
+      }
+      // 주름 리본 꽃: 뾰족한 바깥 테 + 번갈아 어두운 주름
+      const N = 40;
+      const rOut = 246;
+      const rIn = 212;
+      g.beginPath();
+      for (let i = 0; i <= N * 2; i++) {
+        const a = (i / (N * 2)) * Math.PI * 2;
+        const r = i % 2 ? rIn : rOut;
+        g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      }
+      g.closePath();
+      g.fillStyle = color;
+      g.fill();
+      g.fillStyle = dark;
+      for (let i = 0; i < N; i += 2) {
+        const a0 = (i / N) * Math.PI * 2;
+        const a1 = ((i + 1) / N) * Math.PI * 2;
+        g.beginPath();
+        g.moveTo(cx, cy);
+        g.lineTo(cx + Math.cos(a0) * rOut, cy + Math.sin(a0) * rOut);
+        g.lineTo(cx + Math.cos(a1) * rIn, cy + Math.sin(a1) * rIn);
+        g.closePath();
+        g.globalAlpha = 0.35;
+        g.fill();
+      }
+      g.globalAlpha = 1;
+      // 안쪽 테 + 바느질 점선 (부문 이름이 크게 들어가도록 테는 얇게)
+      g.beginPath();
+      g.arc(cx, cy, 214, 0, Math.PI * 2);
+      g.fillStyle = light;
+      g.fill();
+      g.setLineDash([10, 9]);
+      g.lineWidth = 4;
+      g.strokeStyle = "rgba(255,255,255,0.9)";
+      g.beginPath();
+      g.arc(cx, cy, 205, 0, Math.PI * 2);
+      g.stroke();
+      g.setLineDash([]);
+      // 금·은·동 원판
+      const { metal, ink } = medalTone(award);
+      const R = 194;
+      const grad = g.createLinearGradient(cx - R, cy - R, cx + R, cy + R);
+      grad.addColorStop(0, metal[0]);
+      grad.addColorStop(0.45, metal[1]);
+      grad.addColorStop(1, metal[2]);
+      g.beginPath();
+      g.arc(cx, cy, R, 0, Math.PI * 2);
+      g.fillStyle = grad;
+      g.fill();
+      g.lineWidth = 5;
+      g.strokeStyle = metal[2];
+      g.beginPath();
+      g.arc(cx, cy, R - 16, 0, Math.PI * 2);
+      g.stroke();
+      // 부문 이름: 원판을 가득 채우게 크게, 아래에 밝은 그림자를 깔아 새긴 듯이
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      const size = fitText(g, award, 900, award.length <= 2 ? 150 : 120, 2 * (R - 34));
+      const ty = cy + size * 0.06;
+      g.fillStyle = "rgba(255,255,255,0.55)";
+      g.fillText(award, cx + 2, ty + 3);
+      g.fillStyle = ink;
+      g.fillText(award, cx, ty);
+    },
+    [award, color]
+  );
+  const D = hero ? 0.95 : 0.72; // 리본 꽃 지름 (m)
+  const W = (D * TW) / (2 * 246);
+  const H = W * (TH / TW);
+  // 텍스처의 메달 가운데(250px)가 (x, y) 에 오도록 평면을 내린다
+  const dy = (TH / 2 - 250) * (W / TW);
+  return (
+    <mesh position={[x, y - dy, 0.09]} rotation={[0, 0, -0.08]} renderOrder={2}>
+      <planeGeometry args={[W, H]} />
+      <meshBasicMaterial map={tex} transparent alphaTest={0.4} toneMapped={false} />
+    </mesh>
   );
 }
 
@@ -222,12 +358,29 @@ export function ZoneArch({ stop, layout }: { stop: Stop; layout: GalleryLayout }
   const half = WALK.pathWidth / 2 + 0.2;
   const W = half * 2 + 0.3;
   const H = W * (TH / TW);
-  const y = 2.62;
+  // 작품 앞에 선 눈높이 시야 위로 지나가게 높이 건다 (낮으면 바로 앞 작품의 위쪽·수상 메달을 가린다)
+  const y = 3.7;
+  // 기둥은 한쪽에만: 바로 앞 작품을 보는 관람객 쪽(그 작품 반대편)에 세워 시야를 가로지르지 않게 한다.
+  // 이 묶음 좌표계에서 +x 는 길의 오른쪽(= -left) 이라 왼쪽 기준 side 의 부호를 뒤집는다.
+  const prevSide = layout.stops[stop.index - 1]?.side ?? -stop.side;
+  const px = prevSide * half;
+  const top = y + H / 2 + 0.1;
+  const brace = 0.7;
   return (
     <group position={[p.x, 0, p.z]} rotation={[0, yaw, 0]}>
+      <mesh position={[px, top / 2, 0]} material={frameMat} castShadow>
+        <boxGeometry args={[0.08, top, 0.08]} />
+      </mesh>
+      {/* 기둥에서 길 건너편까지 뻗은 들보와 버팀대 */}
+      <mesh position={[0, top, 0]} material={frameMat} castShadow>
+        <boxGeometry args={[W + 0.1, 0.06, 0.06]} />
+      </mesh>
+      <mesh position={[px - Math.sign(px) * (brace / 2), top - brace / 2, 0]} rotation={[0, 0, Math.sign(px) * (Math.PI / 4)]} material={frameMat}>
+        <boxGeometry args={[0.045, brace * Math.SQRT2, 0.045]} />
+      </mesh>
       {[-1, 1].map((s) => (
-        <mesh key={s} position={[s * half, (y + H / 2) / 2, 0]} material={frameMat} castShadow>
-          <boxGeometry args={[0.07, y + H / 2, 0.07]} />
+        <mesh key={s} position={[s * (W / 2 - 0.2), (top + y + H / 2) / 2, 0]} material={steelMat}>
+          <boxGeometry args={[0.025, top - (y + H / 2), 0.025]} />
         </mesh>
       ))}
       <mesh position={[0, y, 0]} material={steelMat} castShadow>
