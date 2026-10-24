@@ -29,7 +29,7 @@
     "framer-motion": "^12.5.0",
     "gsap": "^3.13.0",
     "howler": "^2.2.4",
-    "next": "^15.5.24",
+    "next": "^15.5.28",
     "postprocessing": "^6.39.5",
     "react": "19.0.0",
     "react-dom": "19.0.0",
